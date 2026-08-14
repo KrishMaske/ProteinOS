@@ -123,3 +123,16 @@ jobs:
           name: ${{ steps.xcode_info.outputs.scheme }}-${{ github.run_number }}
           path: ${{ steps.xcode_info.outputs.scheme }}.ipa
           retention-days: 30
+          # Default is "warn", which lets the job go green having uploaded nothing.
+          if-no-files-found: error
+
+      # The artifact above is a zip that needs a GitHub login to fetch. Sideloading tools
+      # want a direct, stable .ipa URL, which is what a release asset gives them.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-build-${{ github.run_number }}
+          name: iOS Sideloading Build ${{ github.run_number }}
+          generate_release_notes: true
+          prerelease: true
+          files: ${{ steps.xcode_info.outputs.scheme }}.ipa
