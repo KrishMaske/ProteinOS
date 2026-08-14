@@ -4,6 +4,7 @@ import {
   deleteOpenAIFile,
   OpenAIAPIError,
   openAIErrorDetails,
+  openAIModel,
   uploadOpenAIFile,
 } from '../supabase/functions/_shared/openai.ts';
 
@@ -13,8 +14,46 @@ function configureAPIKey() {
   });
 }
 
+function configureEnvironment(values: Record<string, string>) {
+  vi.stubGlobal('Deno', { env: { get: (name: string) => values[name] } });
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('openAIModel', () => {
+  it('defaults each workload to its own tier', () => {
+    configureEnvironment({});
+    expect(openAIModel()).toBe('gpt-5.6-luna');
+    expect(openAIModel('OPENAI_IMPORT_MODEL')).toBe('gpt-5.6-luna');
+    // Vision stays on the stronger tier: a misread meal is silent and propagates.
+    expect(openAIModel('OPENAI_VISION_MODEL')).toBe('gpt-5.6-terra');
+  });
+
+  it('lets an explicit per-workload variable win', () => {
+    configureEnvironment({
+      OPENAI_VISION_MODEL: 'gpt-5.6-sol',
+      OPENAI_IMPORT_MODEL: 'gpt-5.6-terra',
+    });
+    expect(openAIModel('OPENAI_VISION_MODEL')).toBe('gpt-5.6-sol');
+    expect(openAIModel('OPENAI_IMPORT_MODEL')).toBe('gpt-5.6-terra');
+  });
+
+  it('never lets a generic OPENAI_MODEL drag vision onto a cheaper tier', () => {
+    configureEnvironment({ OPENAI_MODEL: 'gpt-5-nano' });
+    expect(openAIModel()).toBe('gpt-5-nano');
+    // The whole point of the ordering: this must not follow OPENAI_MODEL.
+    expect(openAIModel('OPENAI_VISION_MODEL')).toBe('gpt-5.6-terra');
+    expect(openAIModel('OPENAI_IMPORT_MODEL')).toBe('gpt-5.6-luna');
+  });
+
+  it('falls back to OPENAI_MODEL for a workload with no default of its own', () => {
+    configureEnvironment({ OPENAI_MODEL: 'gpt-5.6-sol' });
+    expect(openAIModel('OPENAI_FUTURE_MODEL')).toBe('gpt-5.6-sol');
+    configureEnvironment({});
+    expect(openAIModel('OPENAI_FUTURE_MODEL')).toBe('gpt-5.6-terra');
+  });
 });
 
 describe('OpenAI Edge Function client', () => {

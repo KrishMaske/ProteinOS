@@ -336,6 +336,9 @@ Deno.serve(async (request) => {
           foods_count: analysis.foods.length,
           confidence: analysis.overallConfidence,
           duration_ms: Math.round(performance.now() - startedAt),
+          // Recorded so image detail and model tier can be judged on measured cost
+          // rather than estimates. ai_runs already stores this for coach and import.
+          usage: response.usage ?? null,
         },
       })
       .eq("id", runId);

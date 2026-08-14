@@ -156,8 +156,33 @@ function isOpenAIFileId(value: unknown): value is string {
   return typeof value === 'string' && /^file-[A-Za-z0-9_-]{1,500}$/.test(value);
 }
 
+/**
+ * Default model per workload.
+ *
+ * Coach and routine import run on the cheap tier because both sit behind a human review
+ * step that surfaces a bad answer before it is committed. Food analysis stays on the
+ * stronger tier because a misidentified meal looks plausible, is accepted without
+ * question, and then propagates into daily totals, weekly averages, body composition,
+ * and recalculated calorie targets.
+ */
+const DEFAULT_MODEL_BY_VARIABLE: Record<string, string> = {
+  OPENAI_MODEL: 'gpt-5.6-luna',
+  OPENAI_IMPORT_MODEL: 'gpt-5.6-luna',
+  OPENAI_VISION_MODEL: 'gpt-5.6-terra',
+};
+
+const LAST_RESORT_MODEL = 'gpt-5.6-terra';
+
+/**
+ * Each workload reads its own variable and falls back to its own default. A generic
+ * OPENAI_MODEL is deliberately consulted *after* the per-workload default, so setting it
+ * cannot silently drag vision onto a cheaper model.
+ */
 export function openAIModel(variable = 'OPENAI_MODEL') {
-  return Deno.env.get(variable) ?? Deno.env.get('OPENAI_MODEL') ?? 'gpt-5.6-terra';
+  return Deno.env.get(variable)
+    ?? DEFAULT_MODEL_BY_VARIABLE[variable]
+    ?? Deno.env.get('OPENAI_MODEL')
+    ?? LAST_RESORT_MODEL;
 }
 
 export async function createResponse(body: Record<string, unknown>, timeoutMs = 45_000) {
