@@ -11,12 +11,12 @@ export async function getProgressDashboard() {
     supabase.from('body_metrics').select('*').order('measured_at', { ascending: true }).limit(180),
     supabase.from('weekly_workout_summary').select('*').order('week_start', { ascending: true }).limit(26),
     supabase.from('personal_bests').select('*').order('estimated_one_rep_max', { ascending: false }).limit(8),
-    supabase.from('profiles').select('preferred_units').single(),
+    supabase.from('profiles').select('preferred_units,height_cm,birth_date,biological_sex').single(),
     supabase.from('daily_nutrition_totals').select('logged_date,protein_grams').order('logged_date', { ascending: false }).limit(30),
     supabase.from('nutrition_targets').select('protein_grams').order('effective_from', { ascending: false }).limit(1).maybeSingle(),
   ]);
   for (const result of [metrics, training, bests, profile, nutrition, target]) if (result.error) throw result.error;
-  return { metrics: metrics.data ?? [], training: training.data ?? [], bests: bests.data ?? [], preferredUnits: profile.data?.preferred_units ?? 'metric', nutrition: nutrition.data ?? [], proteinTarget: target.data?.protein_grams ?? null };
+  return { metrics: metrics.data ?? [], training: training.data ?? [], bests: bests.data ?? [], preferredUnits: profile.data?.preferred_units ?? 'metric', profile: profile.data, nutrition: nutrition.data ?? [], proteinTarget: target.data?.protein_grams ?? null };
 }
 
 export async function createBodyMetric(input: TablesInsert<'body_metrics'>) {

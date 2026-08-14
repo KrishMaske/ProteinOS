@@ -4,8 +4,10 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, EmptyState, ErrorState, LoadingState, Screen, SectionHeader } from '@/components/ui';
 import { radius, spacing } from '@/constants/tokens';
+import { ageFromBirthDate } from '@/features/nutrition/services/nutrition-targets';
 import { TrendChart } from '@/features/progress/components/trend-chart';
 import { useProgressDashboard } from '@/features/progress/hooks/use-progress';
+import { bmiCategory, bodyMassIndex, estimateBodyFat, type BodyFatEstimate } from '@/features/progress/services/body-composition';
 import { sevenDayMovingAverage } from '@/features/progress/services/moving-average';
 import { summarizeRecomposition } from '@/features/progress/services/recomposition-summary';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -39,6 +41,23 @@ export default function ProgressScreen() {
   const savedMetrics = [...data.metrics].reverse();
   const visibleMetrics = showAllMetrics ? savedMetrics : savedMetrics.slice(0, 5);
 
+  // Composition reads the newest value of each field independently, since a weigh-in and a
+  // tape measurement are often logged on different days.
+  const heightCm = data.profile?.height_cm === null || data.profile?.height_cm === undefined ? null : Number(data.profile.height_cm);
+  const latestOf = (pick: (metric: Tables<'body_metrics'>) => number | null) =>
+    savedMetrics.map(pick).find((value) => value !== null && Number.isFinite(value)) ?? null;
+  const composition = heightCm === null ? null : {
+    bmi: bodyMassIndex(latestOf((m) => m.weight_kg) ?? 0, heightCm),
+    fat: estimateBodyFat({
+      weightKg: latestOf((m) => m.weight_kg) ?? 0,
+      heightCm,
+      waistCm: latestOf((m) => m.waist_cm),
+      age: data.profile?.birth_date ? ageFromBirthDate(data.profile.birth_date) : null,
+      biologicalSex: data.profile?.biological_sex,
+      measuredBodyFatPercent: latestOf((m) => m.body_fat_percent),
+    }),
+  };
+
   return (
     <Screen safeEdges={['top', 'left', 'right']}>
       <View style={styles.header}><AppText variant="title">Progress</AppText><AppText color={colors.muted}>See the direction, not the daily noise.</AppText></View>
@@ -52,6 +71,7 @@ export default function ProgressScreen() {
               <View style={[styles.summary, { backgroundColor: colors.softAccent }]}><AppText variant="eyebrow" color={summary.kind === 'positive' ? colors.primary : colors.muted}>{summary.title}</AppText><AppText>{summary.detail}</AppText></View>
               {weights.length > 1 ? <Card><AppText variant="heading">Weight · {imperial ? 'lb' : 'kg'}</AppText><TrendChart values={weights} label="Weight" />{weightAverage.length > 1 ? <AppText variant="caption" color={colors.muted}>7-day average: {weightAverage.at(-1)?.toFixed(1)} {imperial ? 'lb' : 'kg'}</AppText> : null}</Card> : null}
               {waists.length > 1 ? <Card><AppText variant="heading">Waist · {imperial ? 'in' : 'cm'}</AppText><TrendChart values={waists} label="Waist" /></Card> : null}
+              {composition ? <BodyComposition bmi={composition.bmi} fat={composition.fat} imperial={imperial} /> : null}
               <View style={styles.actions}><Link href="/progress/log" asChild><Button style={styles.growingAction}>Log measurement</Button></Link><Link href="/progress/photo" asChild><Button style={styles.growingAction} variant="secondary">Add progress photo</Button></Link></View>
               <SectionHeader title="Saved measurements" action={savedMetrics.length > 5 ? <Pressable accessibilityRole="button" onPress={() => setShowAllMetrics((current) => !current)} hitSlop={8}><AppText variant="caption" color={colors.primary}>{showAllMetrics ? 'Show less' : 'View all'}</AppText></Pressable> : undefined} />
               <Card style={styles.measurementList}>
@@ -85,8 +105,74 @@ export default function ProgressScreen() {
   );
 }
 
+const bmiLabels: Record<ReturnType<typeof bmiCategory>, string> = {
+  underweight: 'Underweight',
+  healthy: 'Healthy range',
+  overweight: 'Overweight',
+  obese: 'Obese',
+};
+
+const fatLabels: Record<BodyFatEstimate['category'], string> = {
+  essential: 'Essential fat only',
+  athletic: 'Athletic',
+  fitness: 'Fitness',
+  average: 'Average',
+  obese: 'Obese',
+};
+
+const methodNotes: Record<BodyFatEstimate['method'], string> = {
+  measured: 'From the body fat you logged.',
+  rfm: 'Relative Fat Mass, from your height and waist.',
+  deurenberg: 'Estimated from BMI and age. Log a waist measurement for a closer read.',
+};
+
+function BodyComposition({ bmi, fat, imperial }: { bmi: number | null; fat: BodyFatEstimate | null; imperial: boolean }) {
+  const { colors } = useAppTheme();
+  const mass = (kg: number) => `${Math.round(imperial ? kgToLb(kg) : kg)} ${imperial ? 'lb' : 'kg'}`;
+  if (bmi === null && !fat) return null;
+
+  return (
+    <Card>
+      <AppText variant="heading">Body composition</AppText>
+      <View style={styles.compositionRow}>
+        {bmi !== null ? (
+          <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
+            <AppText variant="caption" color={colors.muted}>BMI</AppText>
+            <AppText variant="heading">{bmi.toFixed(1)}</AppText>
+            <AppText variant="caption" color={colors.muted}>{bmiLabels[bmiCategory(bmi)]}</AppText>
+          </View>
+        ) : null}
+        {fat ? (
+          <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
+            <AppText variant="caption" color={colors.muted}>Body fat</AppText>
+            <AppText variant="heading">{fat.percent.toFixed(1)}%</AppText>
+            <AppText variant="caption" color={colors.muted}>{fatLabels[fat.category]}</AppText>
+          </View>
+        ) : null}
+        {fat ? (
+          <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
+            <AppText variant="caption" color={colors.muted}>Lean mass</AppText>
+            <AppText variant="heading">{mass(fat.leanMassKg)}</AppText>
+            <AppText variant="caption" color={colors.muted}>{mass(fat.fatMassKg)} fat</AppText>
+          </View>
+        ) : null}
+      </View>
+      {fat ? (
+        <AppText variant="caption" color={colors.muted}>
+          {methodNotes[fat.method]}
+          {fat.standardErrorPoints === null
+            ? ''
+            : ` Tape estimates typically land within about ${fat.standardErrorPoints} points of a DXA scan, so track the direction rather than the exact number.`}
+        </AppText>
+      ) : null}
+    </Card>
+  );
+}
+
 const styles = StyleSheet.create({
   header: { minWidth: 0, gap: spacing.xs },
+  compositionRow: { minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  compositionStat: { minWidth: 96, flexGrow: 1, flexBasis: 96, borderRadius: radius.md, padding: spacing.md, gap: 2 },
   segments: { flexDirection: 'row', gap: spacing.xs, padding: spacing.xs, borderRadius: radius.pill },
   segment: { flex: 1, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
   ranges: { flexDirection: 'row', gap: spacing.xs },
