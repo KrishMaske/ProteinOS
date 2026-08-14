@@ -150,7 +150,14 @@ describe('estimateBodyFat', () => {
     // 80 * 0.221 = 17.68 -> 17.7
     expect(result.fatMassKg).toBe(17.7);
     expect(result.leanMassKg).toBe(62.3);
-    expect(result.fatMassKg + result.leanMassKg).toBeCloseTo(80, 5);
+    expect(result.fatMassKg! + result.leanMassKg!).toBeCloseTo(80, 5);
+  });
+
+  it('reports a percentage but no mass split when weight is unknown', () => {
+    const result = estimateBodyFat({ weightKg: 0, heightCm: 178, waistCm: 85, biologicalSex: 'male' })!;
+    expect(result.percent).toBe(22.1);
+    expect(result.fatMassKg).toBeNull();
+    expect(result.leanMassKg).toBeNull();
   });
 
   it('clamps physiologically impossible equation output', () => {
@@ -166,10 +173,10 @@ describe('estimateBodyFat', () => {
     const before = estimateBodyFat({ ...base, weightKg: 88, waistCm: 96 })!;
     const after = estimateBodyFat({ ...base, weightKg: 80, waistCm: 85 })!;
     expect(after.percent).toBeLessThan(before.percent);
-    expect(after.fatMassKg).toBeLessThan(before.fatMassKg);
+    expect(after.fatMassKg!).toBeLessThan(before.fatMassKg!);
     // The point of the plan: most of the 8kg lost should be fat, not lean tissue.
     const weightLost = 88 - 80;
-    const fatLost = before.fatMassKg - after.fatMassKg;
+    const fatLost = before.fatMassKg! - after.fatMassKg!;
     expect(fatLost / weightLost).toBeGreaterThan(0.5);
   });
 });

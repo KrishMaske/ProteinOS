@@ -8,6 +8,7 @@ import { AppText, Button, Card, ErrorState, Field, LoadingState, ProgressBar, Sc
 import { radius, spacing } from '@/constants/tokens';
 import { ExerciseMedia } from '@/features/exercises/components/exercise-media';
 import { pickAndUploadFoodPhoto } from '@/features/nutrition/api/food-photo';
+import type { CompositionSummary } from '@/features/progress/services/weekly-body-metrics';
 import { useToday } from '@/features/today/hooks/use-today';
 import { useCompleteRestDay, useCompleteWorkout, useQuickLogSet, useStartWorkout } from '@/features/workouts/hooks/use-workout';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -191,6 +192,8 @@ export default function TodayScreen() {
         {cameraError ? <AppText variant="caption" color={colors.danger}>{cameraError}</AppText> : null}
       </Card>
 
+      {data.composition ? <CompositionCard summary={data.composition} imperial={imperial} /> : null}
+
       <View style={styles.secondaryActions}>
         <Link href="/progress/log" asChild><Button variant="secondary" style={styles.secondaryButton}>Log weight</Button></Link>
         <Link href="/(tabs)/progress" asChild><Button variant="ghost" style={styles.secondaryButton}>{latestWeight ? `Latest · ${latestWeight}` : 'View progress'}</Button></Link>
@@ -255,6 +258,65 @@ function QuickSetLogger({ exerciseName, imperial, initialReps, initialWeightKg, 
   );
 }
 
+/** Signed change with the arrow the user cares about: down is progress on a cut. */
+function DeltaNote({ change, unit }: { change: number | null; unit: string }) {
+  const { colors } = useAppTheme();
+  if (change === null) return <AppText variant="caption" color={colors.muted}>First week</AppText>;
+  if (Math.abs(change) < 0.05) return <AppText variant="caption" color={colors.muted}>Holding</AppText>;
+  return (
+    <AppText variant="caption" color={colors.muted}>
+      {change > 0 ? '+' : ''}{change.toFixed(1)}{unit} vs last week
+    </AppText>
+  );
+}
+
+function CompositionCard({ summary, imperial }: { summary: CompositionSummary; imperial: boolean }) {
+  const { colors } = useAppTheme();
+  const { current, bmiChange, bodyFatChange } = summary;
+  const weekLabel = new Date(`${current.weekStart}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+  return (
+    <Card>
+      <View style={styles.workoutHeading}>
+        <View style={styles.flex}>
+          <AppText variant="eyebrow" color={colors.primary}>Body composition</AppText>
+          <AppText variant="caption" color={colors.muted}>
+            Week of {weekLabel} · {current.readings} log{current.readings === 1 ? '' : 's'} averaged
+          </AppText>
+        </View>
+        <Link href="/(tabs)/progress" style={{ color: colors.primary }}>Trends</Link>
+      </View>
+      <View style={styles.compositionRow}>
+        {current.bmi !== null ? (
+          <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
+            <AppText variant="caption" color={colors.muted}>BMI</AppText>
+            <AppText variant="heading">{current.bmi.toFixed(1)}</AppText>
+            <DeltaNote change={bmiChange} unit="" />
+          </View>
+        ) : null}
+        {current.fat ? (
+          <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
+            <AppText variant="caption" color={colors.muted}>Body fat</AppText>
+            <AppText variant="heading">{current.fat.percent.toFixed(1)}%</AppText>
+            <DeltaNote change={bodyFatChange} unit=" pts" />
+          </View>
+        ) : null}
+        {current.fat?.leanMassKg !== null && current.fat?.leanMassKg !== undefined ? (
+          <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
+            <AppText variant="caption" color={colors.muted}>Lean mass</AppText>
+            <AppText variant="heading">
+              {Math.round(imperial ? kgToLb(current.fat.leanMassKg) : current.fat.leanMassKg)} {imperial ? 'lb' : 'kg'}
+            </AppText>
+            <AppText variant="caption" color={colors.muted}>
+              {Math.round(imperial ? kgToLb(current.fat.fatMassKg ?? 0) : (current.fat.fatMassKg ?? 0))} {imperial ? 'lb' : 'kg'} fat
+            </AppText>
+          </View>
+        ) : null}
+      </View>
+    </Card>
+  );
+}
+
 function NutritionProgress({ label, value, target, unit }: { label: string; value: number; target: number; unit: string }) {
   const { colors } = useAppTheme();
   return <View style={styles.progress}><View style={styles.progressCopy}><AppText variant="caption">{label}</AppText><AppText variant="caption" color={colors.muted}>{Math.round(value)} / {Math.round(target)} {unit}</AppText></View><ProgressBar label={`${label}: ${Math.round(value)} of ${Math.round(target)} ${unit}`} value={target > 0 ? value / target * 100 : 0} /></View>;
@@ -283,6 +345,8 @@ const styles = StyleSheet.create({
   progressCopy: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md },
   nutritionActions: { flexDirection: 'row', gap: spacing.sm },
   nutritionAction: { flex: 1, minHeight: 46, paddingHorizontal: spacing.md },
+  compositionRow: { minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  compositionStat: { minWidth: 96, flexGrow: 1, flexBasis: 96, borderRadius: radius.md, padding: spacing.md, gap: 2 },
   secondaryActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   secondaryButton: { flexGrow: 1, flexBasis: 150, minWidth: 0 },
   flex: { flex: 1, minWidth: 0 },

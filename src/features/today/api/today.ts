@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabase/client';
 import { withResolvedExerciseMedia } from '@/features/exercises/api/exercise-media';
 import { exerciseSummary } from '@/features/exercises/exercise-reference';
+import { ageFromBirthDate } from '@/features/nutrition/services/nutrition-targets';
+import { summarizeComposition } from '@/features/progress/services/weekly-body-metrics';
 
 type TodayRoutineDay = {
   id: string;
@@ -17,16 +19,35 @@ type TodayRoutine = {
   routine_days: TodayRoutineDay[];
 };
 
+/** Enough history for a week-over-week comparison even with sparse logging. */
+const COMPOSITION_WINDOW_DAYS = 90;
+
 export async function getTodayDashboard(date: string) {
-  const [profile, nutrition, target, routine, latestWeight, activeSession] = await Promise.all([
-    supabase.from('profiles').select('display_name,preferred_units').single(),
+  const compositionStart = new Date(Date.now() - COMPOSITION_WINDOW_DAYS * 86_400_000).toISOString();
+  const [profile, nutrition, target, routine, latestWeight, recentMetrics, activeSession] = await Promise.all([
+    supabase.from('profiles').select('display_name,preferred_units,height_cm,birth_date,biological_sex').single(),
     supabase.from('daily_nutrition_totals').select('*').eq('logged_date', date).maybeSingle(),
     supabase.from('nutrition_targets').select('*').lte('effective_from', date).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('workout_routines').select('id,name,current_cycle_index,routine_days(id,name,day_index,is_rest_day,routine_exercises(id))').eq('status', 'active').maybeSingle(),
     supabase.from('body_metrics').select('weight_kg,measured_at').not('weight_kg', 'is', null).order('measured_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('body_metrics').select('measured_at,weight_kg,waist_cm,body_fat_percent').gte('measured_at', compositionStart).order('measured_at', { ascending: false }),
     supabase.from('workout_sessions').select('id,name,started_at,routine_day_id,workout_session_exercises(id,exercise_id,custom_exercise_id,exercise_index,exercise_catalog(id,name,target,equipment,image_source,gif_source),custom_exercises(id,name,target,equipment,media_path),workout_sets(id,set_index,set_type,weight_kg,reps,completed_at))').eq('status', 'in_progress').order('started_at', { ascending: false }).limit(1).maybeSingle(),
   ]);
-  for (const result of [profile, nutrition, target, routine, latestWeight, activeSession]) if (result.error) throw result.error;
+  for (const result of [profile, nutrition, target, routine, latestWeight, recentMetrics, activeSession]) if (result.error) throw result.error;
+
+  const composition = summarizeComposition(
+    (recentMetrics.data ?? []).map((row) => ({
+      measuredAt: row.measured_at,
+      weightKg: row.weight_kg === null ? null : Number(row.weight_kg),
+      waistCm: row.waist_cm === null ? null : Number(row.waist_cm),
+      bodyFatPercent: row.body_fat_percent === null ? null : Number(row.body_fat_percent),
+    })),
+    {
+      heightCm: profile.data?.height_cm === null || profile.data?.height_cm === undefined ? null : Number(profile.data.height_cm),
+      age: profile.data?.birth_date ? ageFromBirthDate(profile.data.birth_date) : null,
+      biologicalSex: profile.data?.biological_sex,
+    },
+  );
 
   const activeRoutine = routine.data as unknown as TodayRoutine | null;
   let suggestedDay = null;
@@ -47,5 +68,5 @@ export async function getTodayDashboard(date: string) {
       }
     : null;
 
-  return { profile: profile.data, nutrition: nutrition.data, target: target.data, routine: activeRoutine, latestWeight: latestWeight.data, activeSession: session, suggestedDay };
+  return { profile: profile.data, nutrition: nutrition.data, target: target.data, routine: activeRoutine, latestWeight: latestWeight.data, composition, activeSession: session, suggestedDay };
 }

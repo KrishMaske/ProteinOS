@@ -20,8 +20,9 @@ export type BodyFatEstimate = {
   /** Approximate standard error against DXA, in percentage points. Null when measured. */
   standardErrorPoints: number | null;
   category: BodyFatCategory;
-  fatMassKg: number;
-  leanMassKg: number;
+  /** Null when no weight is on record — the percentage is still valid without it. */
+  fatMassKg: number | null;
+  leanMassKg: number | null;
 };
 
 /**
@@ -140,7 +141,7 @@ export function estimateBodyFat(inputs: BodyCompositionInputs): BodyFatEstimate 
   if (!resolved) return null;
   // Equations are unbounded and can run past physiological limits at extreme ratios.
   const percent = Math.min(75, Math.max(2, resolved.percent));
-  const fatMassKg = isPositive(weightKg) ? round(weightKg * (percent / 100)) : 0;
+  const fatMassKg = isPositive(weightKg) ? round(weightKg * (percent / 100)) : null;
 
   return {
     percent,
@@ -148,6 +149,6 @@ export function estimateBodyFat(inputs: BodyCompositionInputs): BodyFatEstimate 
     standardErrorPoints: resolved.standardErrorPoints,
     category: bodyFatCategory(percent, biologicalSex),
     fatMassKg,
-    leanMassKg: isPositive(weightKg) ? round(weightKg - fatMassKg) : 0,
+    leanMassKg: fatMassKg === null ? null : round(weightKg - fatMassKg),
   };
 }

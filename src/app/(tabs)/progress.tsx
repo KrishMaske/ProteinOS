@@ -7,7 +7,8 @@ import { radius, spacing } from '@/constants/tokens';
 import { ageFromBirthDate } from '@/features/nutrition/services/nutrition-targets';
 import { TrendChart } from '@/features/progress/components/trend-chart';
 import { useProgressDashboard } from '@/features/progress/hooks/use-progress';
-import { bmiCategory, bodyMassIndex, estimateBodyFat, type BodyFatEstimate } from '@/features/progress/services/body-composition';
+import { bmiCategory, type BodyFatEstimate } from '@/features/progress/services/body-composition';
+import { summarizeComposition, weeklyComposition, type CompositionSummary } from '@/features/progress/services/weekly-body-metrics';
 import { sevenDayMovingAverage } from '@/features/progress/services/moving-average';
 import { summarizeRecomposition } from '@/features/progress/services/recomposition-summary';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -41,22 +42,23 @@ export default function ProgressScreen() {
   const savedMetrics = [...data.metrics].reverse();
   const visibleMetrics = showAllMetrics ? savedMetrics : savedMetrics.slice(0, 5);
 
-  // Composition reads the newest value of each field independently, since a weigh-in and a
-  // tape measurement are often logged on different days.
-  const heightCm = data.profile?.height_cm === null || data.profile?.height_cm === undefined ? null : Number(data.profile.height_cm);
-  const latestOf = (pick: (metric: Tables<'body_metrics'>) => number | null) =>
-    savedMetrics.map(pick).find((value) => value !== null && Number.isFinite(value)) ?? null;
-  const composition = heightCm === null ? null : {
-    bmi: bodyMassIndex(latestOf((m) => m.weight_kg) ?? 0, heightCm),
-    fat: estimateBodyFat({
-      weightKg: latestOf((m) => m.weight_kg) ?? 0,
-      heightCm,
-      waistCm: latestOf((m) => m.waist_cm),
-      age: data.profile?.birth_date ? ageFromBirthDate(data.profile.birth_date) : null,
-      biologicalSex: data.profile?.biological_sex,
-      measuredBodyFatPercent: latestOf((m) => m.body_fat_percent),
-    }),
+  // Composition runs off weekly averages, the same basis Today uses, so daily noise cannot
+  // swing the number and the two screens can never disagree.
+  const compositionProfile = {
+    heightCm: data.profile?.height_cm === null || data.profile?.height_cm === undefined ? null : Number(data.profile.height_cm),
+    age: data.profile?.birth_date ? ageFromBirthDate(data.profile.birth_date) : null,
+    biologicalSex: data.profile?.biological_sex,
   };
+  const compositionReadings = data.metrics.map((item) => ({
+    measuredAt: item.measured_at,
+    weightKg: item.weight_kg === null ? null : Number(item.weight_kg),
+    waistCm: item.waist_cm === null ? null : Number(item.waist_cm),
+    bodyFatPercent: item.body_fat_percent === null ? null : Number(item.body_fat_percent),
+  }));
+  const composition = summarizeComposition(compositionReadings, compositionProfile);
+  const bodyFatSeries = weeklyComposition(compositionReadings, compositionProfile)
+    .filter((week) => days === Infinity || new Date(`${week.weekStart}T00:00:00`).getTime() >= cutoff)
+    .flatMap((week) => (week.fat ? [week.fat.percent] : []));
 
   return (
     <Screen safeEdges={['top', 'left', 'right']}>
@@ -71,7 +73,7 @@ export default function ProgressScreen() {
               <View style={[styles.summary, { backgroundColor: colors.softAccent }]}><AppText variant="eyebrow" color={summary.kind === 'positive' ? colors.primary : colors.muted}>{summary.title}</AppText><AppText>{summary.detail}</AppText></View>
               {weights.length > 1 ? <Card><AppText variant="heading">Weight · {imperial ? 'lb' : 'kg'}</AppText><TrendChart values={weights} label="Weight" />{weightAverage.length > 1 ? <AppText variant="caption" color={colors.muted}>7-day average: {weightAverage.at(-1)?.toFixed(1)} {imperial ? 'lb' : 'kg'}</AppText> : null}</Card> : null}
               {waists.length > 1 ? <Card><AppText variant="heading">Waist · {imperial ? 'in' : 'cm'}</AppText><TrendChart values={waists} label="Waist" /></Card> : null}
-              {composition ? <BodyComposition bmi={composition.bmi} fat={composition.fat} imperial={imperial} /> : null}
+              {composition ? <BodyComposition summary={composition} series={bodyFatSeries} imperial={imperial} /> : null}
               <View style={styles.actions}><Link href="/progress/log" asChild><Button style={styles.growingAction}>Log measurement</Button></Link><Link href="/progress/photo" asChild><Button style={styles.growingAction} variant="secondary">Add progress photo</Button></Link></View>
               <SectionHeader title="Saved measurements" action={savedMetrics.length > 5 ? <Pressable accessibilityRole="button" onPress={() => setShowAllMetrics((current) => !current)} hitSlop={8}><AppText variant="caption" color={colors.primary}>{showAllMetrics ? 'Show less' : 'View all'}</AppText></Pressable> : undefined} />
               <Card style={styles.measurementList}>
@@ -126,20 +128,27 @@ const methodNotes: Record<BodyFatEstimate['method'], string> = {
   deurenberg: 'Estimated from BMI and age. Log a waist measurement for a closer read.',
 };
 
-function BodyComposition({ bmi, fat, imperial }: { bmi: number | null; fat: BodyFatEstimate | null; imperial: boolean }) {
+function BodyComposition({ summary, series, imperial }: { summary: CompositionSummary; series: number[]; imperial: boolean }) {
   const { colors } = useAppTheme();
+  const { current, bmiChange, bodyFatChange } = summary;
+  const fat = current.fat;
   const mass = (kg: number) => `${Math.round(imperial ? kgToLb(kg) : kg)} ${imperial ? 'lb' : 'kg'}`;
-  if (bmi === null && !fat) return null;
+  const delta = (change: number | null, unit: string) =>
+    change === null ? 'first week' : Math.abs(change) < 0.05 ? 'holding' : `${change > 0 ? '+' : ''}${change.toFixed(1)}${unit} vs last week`;
 
   return (
     <Card>
-      <AppText variant="heading">Body composition</AppText>
+      <View style={styles.sectionTitle}>
+        <AppText variant="heading">Body composition</AppText>
+        <AppText variant="caption" color={colors.muted}>{current.readings} log{current.readings === 1 ? '' : 's'} this week</AppText>
+      </View>
       <View style={styles.compositionRow}>
-        {bmi !== null ? (
+        {current.bmi !== null ? (
           <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
             <AppText variant="caption" color={colors.muted}>BMI</AppText>
-            <AppText variant="heading">{bmi.toFixed(1)}</AppText>
-            <AppText variant="caption" color={colors.muted}>{bmiLabels[bmiCategory(bmi)]}</AppText>
+            <AppText variant="heading">{current.bmi.toFixed(1)}</AppText>
+            <AppText variant="caption" color={colors.muted}>{bmiLabels[bmiCategory(current.bmi)]}</AppText>
+            <AppText variant="caption" color={colors.muted}>{delta(bmiChange, '')}</AppText>
           </View>
         ) : null}
         {fat ? (
@@ -147,22 +156,24 @@ function BodyComposition({ bmi, fat, imperial }: { bmi: number | null; fat: Body
             <AppText variant="caption" color={colors.muted}>Body fat</AppText>
             <AppText variant="heading">{fat.percent.toFixed(1)}%</AppText>
             <AppText variant="caption" color={colors.muted}>{fatLabels[fat.category]}</AppText>
+            <AppText variant="caption" color={colors.muted}>{delta(bodyFatChange, ' pts')}</AppText>
           </View>
         ) : null}
-        {fat ? (
+        {fat?.leanMassKg !== null && fat?.leanMassKg !== undefined ? (
           <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
             <AppText variant="caption" color={colors.muted}>Lean mass</AppText>
             <AppText variant="heading">{mass(fat.leanMassKg)}</AppText>
-            <AppText variant="caption" color={colors.muted}>{mass(fat.fatMassKg)} fat</AppText>
+            <AppText variant="caption" color={colors.muted}>{mass(fat.fatMassKg ?? 0)} fat</AppText>
           </View>
         ) : null}
       </View>
+      {series.length > 1 ? <TrendChart values={series} label="Weekly body fat percentage" /> : null}
       {fat ? (
         <AppText variant="caption" color={colors.muted}>
           {methodNotes[fat.method]}
           {fat.standardErrorPoints === null
             ? ''
-            : ` Tape estimates typically land within about ${fat.standardErrorPoints} points of a DXA scan, so track the direction rather than the exact number.`}
+            : ` Figures use this week's average, not a single day. Tape estimates land within about ${fat.standardErrorPoints} points of a DXA scan, so track the direction rather than the exact number.`}
         </AppText>
       ) : null}
     </Card>
@@ -171,6 +182,7 @@ function BodyComposition({ bmi, fat, imperial }: { bmi: number | null; fat: Body
 
 const styles = StyleSheet.create({
   header: { minWidth: 0, gap: spacing.xs },
+  sectionTitle: { minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   compositionRow: { minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   compositionStat: { minWidth: 96, flexGrow: 1, flexBasis: 96, borderRadius: radius.md, padding: spacing.md, gap: 2 },
   segments: { flexDirection: 'row', gap: spacing.xs, padding: spacing.xs, borderRadius: radius.pill },
