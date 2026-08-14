@@ -8,7 +8,9 @@ on:
 jobs:
   ios-build:
     name: iOS Build (Sideloading)
-    runs-on: macos-15
+    # Expo SDK 57 ships Swift packages declaring swift-tools-version 6.2, which only
+    # Xcode 26 provides. macos-15 gives Xcode 16.4 / Swift 6.1 and cannot build them.
+    runs-on: macos-26
     permissions:
       contents: write
 
@@ -19,23 +21,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: latest
+          node-version: 22.x
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Patch ExpoModulesJSI Swift tools version for Xcode 16
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          package_swift = Path("node_modules/expo-modules-jsi/apple/Package.swift")
-          contents = package_swift.read_text()
-          if contents.startswith("// swift-tools-version: 6.2"):
-              package_swift.write_text(contents.replace("// swift-tools-version: 6.2", "// swift-tools-version: 6.1", 1))
-          PY
 
       - name: Validate required env vars
         env:
@@ -63,7 +54,9 @@ jobs:
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-        run: npx expo prebuild --platform ios --clean
+        # --no-install skips prebuild's own npm/pod pass; npm ci already ran and pods
+        # are installed explicitly below.
+        run: npx expo prebuild --platform ios --clean --no-install
 
       - name: Install CocoaPods
         working-directory: ios
@@ -91,6 +84,14 @@ jobs:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         run: |
+          # Resolve the Swift package graph first so a resolution failure is reported
+          # on its own rather than buried in a compile log.
+          xcodebuild \
+            -resolvePackageDependencies \
+            -workspace "${{ steps.xcode_info.outputs.workspace }}" \
+            -scheme "${{ steps.xcode_info.outputs.scheme }}"
+          # No IPHONEOS_DEPLOYMENT_TARGET override: it would apply to every pod target
+          # and fight the value Expo sets during prebuild.
           xcodebuild \
             -workspace "${{ steps.xcode_info.outputs.workspace }}" \
             -scheme "${{ steps.xcode_info.outputs.scheme }}" \
@@ -102,8 +103,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
-            IPHONEOS_DEPLOYMENT_TARGET=16.0
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=NO
 
       - name: Package app as IPA
         run: |
