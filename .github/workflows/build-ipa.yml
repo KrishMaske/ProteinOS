@@ -1,6 +1,6 @@
 name: iOS Build (Sideloading)
 
-'on':
+on:
   workflow_dispatch:
   push:
     branches: [ ipa ]
@@ -8,7 +8,7 @@ name: iOS Build (Sideloading)
 jobs:
   ios-build:
     name: iOS Build (Sideloading)
-    runs-on: macos-26
+    runs-on: macos-15
     permissions:
       contents: write
 
@@ -19,14 +19,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22.x
+          node-version: latest
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Install Node dependencies
+      - name: Install dependencies
         run: npm ci
 
-      - name: Validate required Expo environment variables
+      - name: Validate required env vars
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
@@ -43,21 +43,16 @@ jobs:
             exit 1
           fi
 
-      # src/lib/env.ts validates these at launch and renders the configuration screen
-      # instead of the app when either is absent, so they must be present at bundle time.
       - name: Create .env file
         run: |
           echo "EXPO_PUBLIC_SUPABASE_URL=${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}" >> .env
           echo "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}" >> .env
 
-      # ios/ is gitignored, so the native project is generated fresh on every run.
-      # --no-install skips prebuild's own npm/pod pass; npm ci already ran and pods
-      # are installed explicitly below with a repo update.
-      - name: Expo prebuild (generate native iOS project)
+      - name: Expo prebuild
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-        run: npx expo prebuild --platform ios --clean --no-install
+        run: npx expo prebuild --platform ios --clean
 
       - name: Install CocoaPods
         working-directory: ios
@@ -74,24 +69,17 @@ jobs:
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
           echo "workspace=$WORKSPACE" >> "$GITHUB_OUTPUT"
           echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
-          echo "Workspace: $WORKSPACE"
-          echo "Scheme:    $SCHEME"
 
       - name: Auto-increment build number
         run: |
           INFO_PLIST="ios/${{ steps.xcode_info.outputs.scheme }}/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" "$INFO_PLIST"
-          echo "Build number set to ${{ github.run_number }}"
 
-      - name: Build with xcodebuild (Release, no code signing)
+      - name: Build with xcodebuild
         env:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
           EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         run: |
-          xcodebuild \
-            -resolvePackageDependencies \
-            -workspace "${{ steps.xcode_info.outputs.workspace }}" \
-            -scheme "${{ steps.xcode_info.outputs.scheme }}"
           xcodebuild \
             -workspace "${{ steps.xcode_info.outputs.workspace }}" \
             -scheme "${{ steps.xcode_info.outputs.scheme }}" \
@@ -103,7 +91,8 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            SWIFT_TREAT_WARNINGS_AS_ERRORS=NO
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=NO \
+            IPHONEOS_DEPLOYMENT_TARGET=16.0
 
       - name: Package app as IPA
         run: |
@@ -116,15 +105,6 @@ jobs:
           mkdir -p Payload
           cp -r "$APP_PATH" Payload/
           zip -r "${SCHEME}.ipa" Payload/
-          echo "Created ${SCHEME}.ipa"
-
-      - name: Prepare release metadata
-        id: release_info
-        run: |
-          TAG="ios-build-${{ github.run_number }}"
-          NAME="iOS Sideloading Build ${{ github.run_number }}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -132,12 +112,3 @@ jobs:
           name: ${{ steps.xcode_info.outputs.scheme }}-${{ github.run_number }}
           path: ${{ steps.xcode_info.outputs.scheme }}.ipa
           retention-days: 30
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.release_info.outputs.tag }}
-          name: ${{ steps.release_info.outputs.name }}
-          generate_release_notes: true
-          prerelease: true
-          files: ${{ steps.xcode_info.outputs.scheme }}.ipa
