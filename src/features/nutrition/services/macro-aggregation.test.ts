@@ -1,0 +1,2 @@
+import { describe, expect, it } from 'vitest'; import { aggregateMacros } from './macro-aggregation';
+describe('aggregateMacros', () => { it('sums entries and treats missing values as zero', () => expect(aggregateMacros([{ calories: 200, proteinGrams: 20 }, { calories: 350, carbohydrateGrams: 45, fatGrams: 10 }])).toEqual({ calories: 550, proteinGrams: 20, carbohydrateGrams: 45, fatGrams: 10, fiberGrams: 0 })); });

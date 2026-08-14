@@ -31,7 +31,19 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
+!.env.example
 .env*.local
+
+# Supabase local runtime and generated artifacts
+supabase/.branches/
+supabase/.temp/
+supabase/functions/*/node_modules/
+supabase/functions/*/.deno-cache/
+
+# local dependency/package research
+.tmp-*/
 
 # typescript
 *.tsbuildinfo
