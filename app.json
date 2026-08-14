@@ -8,16 +8,13 @@
     "scheme": "proteinos",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.krish.proteinos",
-      "icon": "./assets/expo.icon"
+      "bundleIdentifier": "com.krish.proteinos"
     },
     "android": {
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
-        "backgroundColor": "#0A0C10",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#f7e7d6",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false
     },
