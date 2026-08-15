@@ -1,4 +1,12 @@
 import { z } from 'npm:zod@4.4.3';
+import {
+  bodyMassIndex,
+  estimateBodyFat,
+  healthyBodyFatRange,
+  healthyWeightRangeKg,
+  weekStartKey,
+  HEALTHY_BMI,
+} from '../_shared/body-composition.ts';
 
 type SupabaseClient = any;
 
@@ -49,6 +57,21 @@ export const coachTools = [
     type: 'function', name: 'get_body_metrics', strict: true,
     description: 'Get recent user body measurements.',
     parameters: strictObject({ limit: { type: 'integer', minimum: 1, maximum: 24 } }),
+  },
+  {
+    type: 'function', name: 'get_body_composition', strict: true,
+    description: 'Get the user’s current BMI, body fat, lean and fat mass, the healthy ranges for their age and sex, and their goal body-fat band. Figures are averaged per calendar week, exactly as the Progress screen shows them, so quote these rather than deriving your own.',
+    parameters: strictObject({ weeks: { type: 'integer', minimum: 1, maximum: 26 } }),
+  },
+  {
+    type: 'function', name: 'get_nutrition_targets', strict: true,
+    description: 'Get the current calorie and macro targets together with every input and step that produced them: BMR, lifestyle multiplier, training burn, maintenance, and the goal adjustment. Use this to explain why a target is what it is.',
+    parameters: strictObject({}),
+  },
+  {
+    type: 'function', name: 'get_saved_foods', strict: true,
+    description: 'Get the user’s saved foods with their serving sizes and macros, for suggesting meals they already eat.',
+    parameters: strictObject({ limit: { type: 'integer', minimum: 1, maximum: 100 } }),
   },
   {
     type: 'function', name: 'get_active_routine', strict: true,
@@ -111,6 +134,9 @@ const toolInputSchemas: Record<string, z.ZodType> = {
   get_training_history: z.object({ limit: z.number().int().min(1).max(12) }).strict(),
   get_nutrition_summary: z.object({ days: z.number().int().min(1).max(30) }).strict(),
   get_body_metrics: z.object({ limit: z.number().int().min(1).max(24) }).strict(),
+  get_body_composition: z.object({ weeks: z.number().int().min(1).max(26) }).strict(),
+  get_nutrition_targets: z.object({}).strict(),
+  get_saved_foods: z.object({ limit: z.number().int().min(1).max(100) }).strict(),
   get_active_routine: z.object({ includeExercises: z.boolean() }).strict(),
   search_exercises: z.object({ query: z.string(), bodyPart: nullableText, target: nullableText, equipment: nullableText, limit: z.number().int().min(1).max(20) }).strict(),
   get_exercise_details: z.object({ exerciseIds: z.array(z.string().min(1)).min(1).max(20) }).strict(),
@@ -132,6 +158,15 @@ export function validateToolArguments(name: string, input: unknown) {
   const schema = toolInputSchemas[name];
   if (!schema) throw new Error(`Unsupported tool: ${name}`);
   return schema.parse(input);
+}
+
+/** Whole years completed, matching how the app derives age from a birth date. */
+function ageInYears(birthDate: string, today = new Date()) {
+  const born = new Date(`${birthDate}T00:00:00`);
+  let age = today.getFullYear() - born.getFullYear();
+  const monthDelta = today.getMonth() - born.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < born.getDate())) age -= 1;
+  return age;
 }
 
 function daysAgo(days: number) {
@@ -259,6 +294,100 @@ export async function executeCoachTool(client: SupabaseClient, userId: string, n
     }
     case 'get_body_metrics':
       return dataOrThrow(await client.from('body_metrics').select('*').order('measured_at', { ascending: false }).limit(args.limit));
+    case 'get_body_composition': {
+      const since = daysAgo(args.weeks * 7);
+      const [profile, metrics] = await Promise.all([
+        client.from('profiles').select('height_cm,birth_date,biological_sex,goal_body_fat_min,goal_body_fat_max').eq('id', userId).maybeSingle(),
+        client.from('body_metrics').select('measured_at,weight_kg,waist_cm,body_fat_percent')
+          .eq('user_id', userId).gte('measured_at', since).order('measured_at', { ascending: false }),
+      ]);
+      const person = dataOrThrow(profile);
+      const rows = dataOrThrow(metrics) ?? [];
+      const heightCm = person?.height_cm === null || person?.height_cm === undefined ? null : Number(person.height_cm);
+      const age = person?.birth_date ? ageInYears(person.birth_date) : null;
+      if (!heightCm) {
+        return { available: false, reason: 'No height on file, so BMI and body fat cannot be derived.' };
+      }
+
+      // Average per calendar week, each field independently, mirroring the app.
+      const buckets = new Map<string, { weightKg: number[]; waistCm: number[]; bodyFat: number[] }>();
+      for (const row of rows) {
+        const key = weekStartKey(row.measured_at);
+        const bucket = buckets.get(key) ?? { weightKg: [], waistCm: [], bodyFat: [] };
+        if (row.weight_kg !== null) bucket.weightKg.push(Number(row.weight_kg));
+        if (row.waist_cm !== null) bucket.waistCm.push(Number(row.waist_cm));
+        if (row.body_fat_percent !== null) bucket.bodyFat.push(Number(row.body_fat_percent));
+        buckets.set(key, bucket);
+      }
+      const mean = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+      const weeks = [...buckets.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([weekStart, bucket]) => {
+          const weightKg = mean(bucket.weightKg);
+          const waistCm = mean(bucket.waistCm);
+          const fat = estimateBodyFat({
+            weightKg: weightKg ?? 0,
+            heightCm,
+            waistCm,
+            age,
+            biologicalSex: person?.biological_sex ?? null,
+            measuredBodyFatPercent: mean(bucket.bodyFat),
+          });
+          return {
+            weekStart,
+            weightKg,
+            waistCm,
+            bmi: weightKg === null ? null : bodyMassIndex(weightKg, heightCm),
+            bodyFatPercent: fat?.percent ?? null,
+            bodyFatMethod: fat?.method ?? null,
+            leanMassKg: fat?.leanMassKg ?? null,
+            fatMassKg: fat?.fatMassKg ?? null,
+          };
+        });
+
+      return {
+        available: weeks.length > 0,
+        current: weeks[weeks.length - 1] ?? null,
+        previous: weeks.length > 1 ? weeks[weeks.length - 2] : null,
+        weeklyHistory: weeks,
+        age,
+        healthyBmi: HEALTHY_BMI,
+        healthyWeightRangeKg: healthyWeightRangeKg(heightCm),
+        healthyBodyFatRange: healthyBodyFatRange(age, person?.biological_sex ?? null),
+        goalBodyFat: person?.goal_body_fat_min === null || person?.goal_body_fat_max === null || person?.goal_body_fat_min === undefined
+          ? null
+          : { min: Number(person.goal_body_fat_min), max: Number(person.goal_body_fat_max) },
+        note: 'Body fat from a tape measurement carries roughly 5 points of error against a DXA scan. Discuss direction over weeks, not single readings.',
+      };
+    }
+    case 'get_nutrition_targets': {
+      const [profile, goal, target] = await Promise.all([
+        client.from('profiles').select('height_cm,birth_date,biological_sex,training_days_per_week,preferred_session_minutes,daily_activity_level,target_weight_kg,goal_body_fat_min,goal_body_fat_max,preferred_units').eq('id', userId).maybeSingle(),
+        client.from('fitness_goals').select('goal_type').eq('user_id', userId).eq('is_active', true).maybeSingle(),
+        client.from('nutrition_targets').select('*').eq('user_id', userId).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      return {
+        storedTarget: dataOrThrow(target),
+        goalType: dataOrThrow(goal)?.goal_type ?? null,
+        inputs: dataOrThrow(profile),
+        howItIsDerived: [
+          'BMR uses Mifflin-St Jeor: 10*kg + 6.25*cm - 5*age + 5 for men, -161 for women.',
+          'Maintenance is BMR * a lifestyle multiplier (sedentary 1.2, light 1.375, moderate 1.55, very active 1.725) PLUS training burn. Training is costed separately at 4 net METs, so kg * hours * 4, averaged over the week. Training frequency does not raise the lifestyle multiplier.',
+          'The goal then shifts maintenance: fat loss -20%, recomp -5%, maintenance 0, strength +5%, muscle gain +10%.',
+          'That shift eases off near a goal weight or inside a goal body-fat band, and stops entirely once inside the band.',
+          'Protein is set per kg of bodyweight by goal, fat takes 25% of calories with a 0.6 g/kg floor, and carbohydrates take the remainder, so the macros always sum to the calorie target.',
+          'With at least 14 days of weigh-ins and 10 logged days of intake, measured maintenance replaces the formula, clamped to within 20% of it.',
+        ],
+      };
+    }
+    case 'get_saved_foods': {
+      const foods = dataOrThrow(await client.from('saved_foods')
+        .select('name,serving_quantity,serving_unit,serving_grams,calories,protein_grams,carbohydrate_grams,fat_grams,fiber_grams,last_logged_at')
+        .eq('user_id', userId)
+        .order('last_logged_at', { ascending: false, nullsFirst: false })
+        .limit(args.limit));
+      return { foods };
+    }
     case 'get_active_routine': {
       const routine = dataOrThrow(await client.from('workout_routines')
         .select(args.includeExercises
