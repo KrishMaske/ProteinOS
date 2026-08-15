@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState, type ComponentProps, type PropsWithChildren, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ComponentProps, type PropsWithChildren, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -30,36 +30,41 @@ type ScreenProps = PropsWithChildren<{
 
 export function Screen({ children, contentContainerStyle, footer, safeEdges = ['left', 'right', 'bottom'], scroll = true }: ScreenProps) {
   const { colors } = useAppTheme();
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const frameRef = useRef<View>(null);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const compact = width < 380;
 
-  // KeyboardAvoidingView infers its padding from its own measured frame, which is wrong
-  // whenever an ancestor pads or offsets it - safe-area insets, modal presentation - and
-  // it fails silently by leaving the footer under the keyboard. The keyboard's own frame
-  // is unambiguous: screen height minus the top of the keyboard is exactly how much of
-  // the screen it covers, so that is applied directly.
-  //
-  // The view must reach the real screen bottom for that to hold, so the footer takes over
-  // the bottom safe-area inset and drops it while the keyboard is up.
+  // KeyboardAvoidingView infers its padding from its own frame and gets it wrong whenever
+  // an ancestor pads or offsets it, failing silently by leaving the footer under the
+  // keyboard. Both parts are measured instead: the keyboard reports where its top edge
+  // sits, and the container is measured in window coordinates, so the overlap is exact
+  // however the screen is nested - full screen, modal sheet, or below a native header.
   const ownsBottomInset = Boolean(footer) && safeEdges.includes('bottom');
   const edges = ownsBottomInset ? safeEdges.filter((edge) => edge !== 'bottom') : safeEdges;
-  // Android resizes the window itself via softwareKeyboardLayoutMode, so padding there
-  // would double count.
+  // Android resizes its own window through softwareKeyboardLayoutMode, where extra
+  // padding would double count.
   const measuresKeyboard = Boolean(footer) && Platform.OS === 'ios';
 
   useEffect(() => {
     if (!measuresKeyboard) return;
-    const change = Keyboard.addListener('keyboardWillChangeFrame', (event) => {
-      setKeyboardInset(Math.max(0, height - event.endCoordinates.screenY));
-    });
-    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardInset(0));
+    const overlap = (keyboardTop: number | null) => {
+      if (keyboardTop === null) {
+        setKeyboardInset(0);
+        return;
+      }
+      frameRef.current?.measureInWindow((_x, y, _w, measuredHeight) => {
+        setKeyboardInset(Math.max(0, y + measuredHeight - keyboardTop));
+      });
+    };
+    const change = Keyboard.addListener('keyboardWillChangeFrame', (event) => overlap(event.endCoordinates.screenY));
+    const hide = Keyboard.addListener('keyboardWillHide', () => overlap(null));
     return () => {
       change.remove();
       hide.remove();
     };
-  }, [height, measuresKeyboard]);
+  }, [measuresKeyboard]);
 
   const content = <View style={[styles.screenContent, compact && styles.compactScreenContent, contentContainerStyle]}>{children}</View>;
   const scrollContent = scroll ? (
@@ -73,15 +78,22 @@ export function Screen({ children, contentContainerStyle, footer, safeEdges = ['
     </ScrollView>
   ) : content;
 
+  const body = (
+    <>
+      {scrollContent}
+      {footer ? <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.line }, ownsBottomInset && keyboardInset === 0 && { paddingBottom: insets.bottom }]}><View style={[styles.footerInner, compact && styles.compactFooterInner]}>{footer}</View></View> : null}
+    </>
+  );
+
   return (
     <SafeAreaView edges={edges} style={[styles.safe, { backgroundColor: colors.background }]}>
       {footer || !scroll ? (
-        <KeyboardAvoidingView
-          behavior={measuresKeyboard ? undefined : Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[styles.safe, measuresKeyboard && { paddingBottom: keyboardInset }]}>
-          {scrollContent}
-          {footer ? <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.line }, ownsBottomInset && keyboardInset === 0 && { paddingBottom: insets.bottom }]}><View style={[styles.footerInner, compact && styles.compactFooterInner]}>{footer}</View></View> : null}
-        </KeyboardAvoidingView>
+        measuresKeyboard ? (
+          // Own padding, so a plain View is enough and can carry the measuring ref.
+          <View ref={frameRef} style={[styles.safe, { paddingBottom: keyboardInset }]}>{body}</View>
+        ) : (
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safe}>{body}</KeyboardAvoidingView>
+        )
       ) : scrollContent}
     </SafeAreaView>
   );
