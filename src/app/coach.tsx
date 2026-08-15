@@ -427,7 +427,7 @@ function AttachmentThumb({ path, onRemove }: { path: string; onRemove: () => voi
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, paddingBottom: 0, gap: spacing.md },
+  screen: { flex: 1, paddingTop: spacing.lg, paddingBottom: 0, gap: spacing.md },
   header: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   headerCopy: { flex: 1, minWidth: 0 },
   messages: { gap: spacing.xl, paddingVertical: spacing.lg },
@@ -442,7 +442,7 @@ const styles = StyleSheet.create({
   prompts: { gap: spacing.sm },
   prompt: { minWidth: 0, minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: spacing.sm },
   thinking: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: 36, paddingVertical: spacing.sm },
-  composerWrap: { gap: spacing.sm },
+  composerWrap: { gap: spacing.sm, paddingBottom: spacing.sm },
   sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
   attachmentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
