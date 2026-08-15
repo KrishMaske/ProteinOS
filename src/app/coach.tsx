@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { HeaderNavigationButton } from '@/components/header-navigation-button';
 import { AppText, Button, Card, ErrorState, Field, LoadingState, PressableCard, Screen } from '@/components/ui';
@@ -45,6 +45,7 @@ export default function CoachScreen() {
   const [attaching, setAttaching] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
+  const [pendingAttach, setPendingAttach] = useState<'camera' | 'library' | 'file' | null>(null);
   const conversationQuery = useCoachConversation(activeId ?? null);
   const sendMessage = useSendCoachMessage();
   const applyGoal = useApplyCoachGoal();
@@ -124,6 +125,29 @@ export default function CoachScreen() {
       setMessage(content);
       setAttachments(sending);
     }
+  }
+
+  /**
+   * iOS will not present a view controller while another is being dismissed, so asking
+   * for the picker in the same tap that closes the sheet silently does nothing. The
+   * choice is held until the sheet reports it has gone. Android has no such restriction
+   * and onDismiss does not fire there, so it launches straight away.
+   */
+  function chooseAttachment(source: 'camera' | 'library' | 'file') {
+    if (Platform.OS === 'ios') {
+      setPendingAttach(source);
+      setAttachMenuOpen(false);
+      return;
+    }
+    setAttachMenuOpen(false);
+    void attach(source);
+  }
+
+  function launchPendingAttach() {
+    if (!pendingAttach) return;
+    const source = pendingAttach;
+    setPendingAttach(null);
+    void attach(source);
   }
 
   async function attach(source: 'camera' | 'library' | 'file') {
@@ -282,16 +306,16 @@ export default function CoachScreen() {
         )}
       </Screen>
 
-      <Modal animationType="fade" transparent visible={attachMenuOpen} onRequestClose={() => setAttachMenuOpen(false)}>
+      <Modal animationType="fade" transparent visible={attachMenuOpen} onDismiss={launchPendingAttach} onRequestClose={() => setAttachMenuOpen(false)}>
         <Pressable accessibilityLabel="Close attachment options" style={styles.sheetBackdrop} onPress={() => setAttachMenuOpen(false)}>
           <Pressable style={[styles.sheet, { backgroundColor: colors.surface }]} onPress={() => undefined}>
             <AppText variant="heading">Attach</AppText>
             <AppText variant="caption" color={colors.muted}>
               Photos, PDFs, or text files up to 10 MB. Ask about ingredients, a nutrition label, a training plan, or anything else in the file.
             </AppText>
-            <Button onPress={() => { setAttachMenuOpen(false); void attach('camera'); }}>Take a photo</Button>
-            <Button variant="secondary" onPress={() => { setAttachMenuOpen(false); void attach('library'); }}>Choose a photo</Button>
-            <Button variant="secondary" onPress={() => { setAttachMenuOpen(false); void attach('file'); }}>Choose a file</Button>
+            <Button onPress={() => chooseAttachment('camera')}>Take a photo</Button>
+            <Button variant="secondary" onPress={() => chooseAttachment('library')}>Choose a photo</Button>
+            <Button variant="secondary" onPress={() => chooseAttachment('file')}>Choose a file</Button>
             <Button variant="ghost" onPress={() => setAttachMenuOpen(false)}>Cancel</Button>
           </Pressable>
         </Pressable>
