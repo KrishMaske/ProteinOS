@@ -1,4 +1,5 @@
-import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useState, type ComponentProps, type PropsWithChildren, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -109,15 +110,33 @@ export function Button({ children, variant = 'primary', disabled, style, ...prop
 
 export function Field({ containerStyle, label, error, ...props }: ComponentProps<typeof TextInput> & { containerStyle?: ViewStyle; label: string; error?: string }) {
   const { colors } = useAppTheme();
+  const [revealed, setRevealed] = useState(false);
+  // Any secure field gets a reveal control, so every password in the app behaves alike.
+  const secure = Boolean(props.secureTextEntry);
   return (
     <View style={[styles.fieldWrap, containerStyle]}>
       <AppText variant="caption" style={styles.fieldLabel}>{label}</AppText>
-      <TextInput
-        accessibilityLabel={label}
-        placeholderTextColor={colors.muted}
-        {...props}
-        style={[styles.field, props.multiline && styles.multilineField, { color: colors.text, borderColor: error ? colors.danger : colors.line, backgroundColor: colors.surface }, props.style]}
-      />
+      <View style={styles.fieldRow}>
+        <TextInput
+          accessibilityLabel={label}
+          placeholderTextColor={colors.muted}
+          {...props}
+          secureTextEntry={secure && !revealed}
+          style={[styles.field, secure && styles.secureField, props.multiline && styles.multilineField, { color: colors.text, borderColor: error ? colors.danger : colors.line, backgroundColor: colors.surface }, props.style]}
+        />
+        {secure ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${revealed ? 'Hide' : 'Show'} ${label}`}
+            accessibilityState={{ selected: revealed }}
+            hitSlop={6}
+            onPress={() => setRevealed((current) => !current)}
+            style={({ pressed }) => [styles.revealButton, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Ionicons name={revealed ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.muted} />
+          </Pressable>
+        ) : null}
+      </View>
       {error ? <AppText variant="caption" color={colors.danger}>{error}</AppText> : null}
     </View>
   );
@@ -167,6 +186,10 @@ const styles = StyleSheet.create({
   button: { minHeight: 50, minWidth: 0, borderRadius: radius.pill, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, alignItems: 'center', justifyContent: 'center' },
   buttonLabel: { fontWeight: '800', fontSize: 16, textAlign: 'center' },
   fieldWrap: { minWidth: 0, gap: spacing.sm },
+  fieldRow: { minWidth: 0, justifyContent: 'center' },
+  // Room for the reveal control so long passwords never run underneath it.
+  secureField: { paddingRight: 52 },
+  revealButton: { position: 'absolute', right: 0, top: 0, bottom: 0, width: 48, alignItems: 'center', justifyContent: 'center' },
   fieldLabel: { marginLeft: spacing.xs },
   field: { minHeight: 52, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: spacing.lg, fontSize: 16 },
   multilineField: { minHeight: 96, paddingTop: spacing.md, textAlignVertical: 'top' },
