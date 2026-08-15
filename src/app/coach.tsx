@@ -12,6 +12,7 @@ import {
   coachActionSchema,
   removeCoachAttachment,
   signedCoachAttachmentUrl,
+  pickCoachDocument,
   uploadCoachAttachment,
   MAX_COACH_ATTACHMENTS,
   type CoachGoalAction,
@@ -125,17 +126,19 @@ export default function CoachScreen() {
     }
   }
 
-  async function attach(source: 'camera' | 'library') {
+  async function attach(source: 'camera' | 'library' | 'file') {
     if (!user || attachments.length >= MAX_COACH_ATTACHMENTS) return;
     setAttachError(null);
     setAttaching(true);
     try {
       const path = source === 'camera'
         ? await captureCoachAttachment(user.id)
-        : await uploadCoachAttachment(user.id);
+        : source === 'library'
+          ? await uploadCoachAttachment(user.id)
+          : await pickCoachDocument(user.id);
       if (path) setAttachments((current) => [...current, path]);
     } catch (caught) {
-      setAttachError(caught instanceof Error ? caught.message : 'Could not attach that image.');
+      setAttachError(caught instanceof Error ? caught.message : 'Could not attach that file.');
     } finally {
       setAttaching(false);
     }
@@ -196,7 +199,7 @@ export default function CoachScreen() {
             ) : null}
             <View style={styles.composer}>
               <Pressable
-                accessibilityLabel="Attach a photo"
+                accessibilityLabel="Attach a photo or file"
                 accessibilityRole="button"
                 disabled={attaching || attachments.length >= MAX_COACH_ATTACHMENTS}
                 onPress={() => setAttachMenuOpen(true)}
@@ -285,12 +288,13 @@ export default function CoachScreen() {
       <Modal animationType="fade" transparent visible={attachMenuOpen} onRequestClose={() => setAttachMenuOpen(false)}>
         <Pressable accessibilityLabel="Close attachment options" style={styles.sheetBackdrop} onPress={() => setAttachMenuOpen(false)}>
           <Pressable style={[styles.sheet, { backgroundColor: colors.surface }]} onPress={() => undefined}>
-            <AppText variant="heading">Attach a photo</AppText>
+            <AppText variant="heading">Attach</AppText>
             <AppText variant="caption" color={colors.muted}>
-              Ingredients, a nutrition label, equipment, or a written plan. Coach reads what is in the picture.
+              Photos, PDFs, or text files up to 10 MB. Ask about ingredients, a nutrition label, a training plan, or anything else in the file.
             </AppText>
             <Button onPress={() => { setAttachMenuOpen(false); void attach('camera'); }}>Take a photo</Button>
-            <Button variant="secondary" onPress={() => { setAttachMenuOpen(false); void attach('library'); }}>Choose from library</Button>
+            <Button variant="secondary" onPress={() => { setAttachMenuOpen(false); void attach('library'); }}>Choose a photo</Button>
+            <Button variant="secondary" onPress={() => { setAttachMenuOpen(false); void attach('file'); }}>Choose a file</Button>
             <Button variant="ghost" onPress={() => setAttachMenuOpen(false)}>Cancel</Button>
           </Pressable>
         </Pressable>
@@ -357,15 +361,35 @@ function GoalConfirmation({ action, error, interactive, onApply, onDismiss, pend
   return <Card style={styles.confirmation}><AppText variant="caption" color={colors.muted}>Confirm goal change</AppText><AppText variant="heading">{format(action.currentGoalType)} → {format(action.goalType)}</AppText>{action.notes ? <AppText variant="caption" color={colors.muted}>{action.notes}</AppText> : null}{error ? <AppText variant="caption" color={colors.danger}>{error}</AppText> : null}<Button disabled={pending || action.currentGoalType === action.goalType} onPress={onApply}>{action.currentGoalType === action.goalType ? 'Already your goal' : pending ? 'Updating…' : 'Update goal'}</Button><Button variant="ghost" disabled={pending} onPress={onDismiss}>Keep current</Button></Card>;
 }
 
-/** Read-only thumbnail for an attachment already sent, shown inside the message bubble. */
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+function isImagePath(path: string) {
+  return IMAGE_EXTENSIONS.includes(path.split('.').pop()?.toLowerCase() ?? '');
+}
+
+/** Documents have no preview, so they show their type instead of an empty square. */
+function FileTile({ path, background }: { path: string; background: string }) {
+  const { colors } = useAppTheme();
+  const extension = (path.split('.').pop() ?? 'file').toUpperCase();
+  return (
+    <View style={[styles.attachmentImage, styles.fileTile, { backgroundColor: background }]}>
+      <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+      <AppText variant="caption" color={colors.muted} numberOfLines={1}>{extension}</AppText>
+    </View>
+  );
+}
+
+/** Read-only preview for an attachment already sent, shown inside the message bubble. */
 function SentAttachment({ path }: { path: string }) {
   const { colors } = useAppTheme();
   const [uri, setUri] = useState<string | null>(null);
+  const image = isImagePath(path);
   useEffect(() => {
+    if (!image) return;
     let cancelled = false;
     void signedCoachAttachmentUrl(path).then((url) => { if (!cancelled) setUri(url); });
     return () => { cancelled = true; };
-  }, [path]);
+  }, [image, path]);
+  if (!image) return <FileTile path={path} background={colors.surface} />;
   return uri
     ? <Image source={{ uri }} style={styles.attachmentImage} contentFit="cover" transition={120} accessibilityLabel="Photo you sent" />
     : <View style={[styles.attachmentImage, { backgroundColor: colors.surface }]} />;
@@ -375,17 +399,21 @@ function SentAttachment({ path }: { path: string }) {
 function AttachmentThumb({ path, onRemove }: { path: string; onRemove: () => void }) {
   const { colors } = useAppTheme();
   const [uri, setUri] = useState<string | null>(null);
+  const image = isImagePath(path);
   useEffect(() => {
+    if (!image) return;
     let cancelled = false;
     void signedCoachAttachmentUrl(path).then((url) => { if (!cancelled) setUri(url); });
     return () => { cancelled = true; };
-  }, [path]);
+  }, [image, path]);
 
   return (
     <View style={styles.attachmentThumb}>
-      {uri
-        ? <Image source={{ uri }} style={styles.attachmentImage} contentFit="cover" transition={120} accessibilityLabel="Attached photo" />
-        : <View style={[styles.attachmentImage, { backgroundColor: colors.raised }]} />}
+      {!image
+        ? <FileTile path={path} background={colors.raised} />
+        : uri
+          ? <Image source={{ uri }} style={styles.attachmentImage} contentFit="cover" transition={120} accessibilityLabel="Attached photo" />
+          : <View style={[styles.attachmentImage, { backgroundColor: colors.raised }]} />}
       <Pressable
         accessibilityLabel="Remove attachment"
         accessibilityRole="button"
@@ -419,6 +447,7 @@ const styles = StyleSheet.create({
   sheet: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
   attachmentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   attachmentThumb: { width: 64, height: 64 },
+  fileTile: { alignItems: 'center', justifyContent: 'center', gap: 2 },
   attachmentImage: { width: 64, height: 64, borderRadius: radius.md },
   attachmentRemove: { position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   composer: { minWidth: 0, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },

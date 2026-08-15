@@ -1,3 +1,4 @@
+import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -58,6 +59,39 @@ export async function getCoachConversation(conversationId: string) {
 }
 
 export const MAX_COACH_ATTACHMENTS = 4;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+/** Everything the bucket and the Coach function both accept. */
+const ACCEPTED_TYPES = [
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'application/pdf', 'text/plain', 'text/csv', 'text/markdown',
+];
+
+/**
+ * Picks any supported document. Images picked here skip the resize the camera path
+ * applies, because a chosen file should reach Coach as the user sees it.
+ */
+export async function pickCoachDocument(userId: string) {
+  const result = await DocumentPicker.getDocumentAsync({ type: ACCEPTED_TYPES, copyToCacheDirectory: true });
+  if (result.canceled) return null;
+  const asset = result.assets[0];
+  const contentType = asset.mimeType ?? 'application/octet-stream';
+  if (!ACCEPTED_TYPES.includes(contentType)) {
+    throw new Error('Coach can read images, PDFs, and plain text files.');
+  }
+  if ((asset.size ?? 0) > MAX_ATTACHMENT_BYTES) {
+    throw new Error('That file is over 10 MB. Try a smaller one.');
+  }
+  const response = await fetch(asset.uri);
+  if (!response.ok) throw new Error('That file could not be read.');
+  const bytes = await response.arrayBuffer();
+  if (!bytes.byteLength) throw new Error('That file was empty.');
+  const extension = asset.name?.split('.').pop()?.toLowerCase() ?? 'bin';
+  const path = `${userId}/${uuid()}.${extension}`;
+  const { error } = await supabase.storage.from('coach-attachments').upload(path, bytes, { contentType, upsert: false });
+  if (error) throw error;
+  return path;
+}
 
 /**
  * Uploads a picked image and returns its storage path. The path is prefixed with the

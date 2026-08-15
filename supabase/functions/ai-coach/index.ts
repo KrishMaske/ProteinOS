@@ -1,7 +1,7 @@
 import { z } from 'npm:zod@4.4.3';
 import { requireUser, safetyIdentifier } from '../_shared/auth.ts';
 import { corsHeaders, json } from '../_shared/http.ts';
-import { createResponse, openAIModel, readOutputText } from '../_shared/openai.ts';
+import { createResponse, deleteOpenAIFile, openAIModel, readOutputText, uploadOpenAIFile } from '../_shared/openai.ts';
 import { coachTools, executeCoachTool, validateToolArguments } from './tools.ts';
 
 const MAX_ATTACHMENTS = 4;
@@ -28,20 +28,42 @@ function bytesToBase64(bytes: Uint8Array) {
  */
 async function loadAttachments(client: any, userId: string, paths: string[]) {
   const content: any[] = [];
+  const openAIFileIds: string[] = [];
   for (const path of paths) {
     if (!path.startsWith(`${userId}/`)) throw new Error('Attachment does not belong to the authenticated user');
     const { data, error } = await client.storage.from('coach-attachments').download(path);
     if (error || !data) throw error ?? new Error('Attachment could not be read');
-    if (!isSupportedImage(data.type)) throw new Error('Attachment is not a supported image');
-    const bytes = new Uint8Array(await data.arrayBuffer());
-    content.push({ type: 'input_image', image_url: `data:${data.type};base64,${bytesToBase64(bytes)}`, detail: 'high' });
+    const name = path.split('/').pop() ?? 'attachment';
+
+    if (IMAGE_TYPES.has(data.type)) {
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      content.push({ type: 'input_image', image_url: `data:${data.type};base64,${bytesToBase64(bytes)}`, detail: 'high' });
+      continue;
+    }
+    if (data.type === 'application/pdf') {
+      // Same route the routine import uses: the Files API handles pagination and layout
+      // far better than pasting extracted text would.
+      const fileId = await uploadOpenAIFile(data, name);
+      openAIFileIds.push(fileId);
+      content.push({ type: 'input_file', file_id: fileId, detail: 'high' });
+      continue;
+    }
+    if (TEXT_TYPES.has(data.type)) {
+      const text = (await data.text()).slice(0, MAX_TEXT_CHARACTERS);
+      content.push({ type: 'input_text', text: `Attached file ${name}:
+
+${text}` });
+      continue;
+    }
+    throw new Error(`${name} is not a file type Coach can read.`);
   }
-  return content;
+  return { content, openAIFileIds };
 }
 
-function isSupportedImage(mimeType: string) {
-  return mimeType === 'image/jpeg' || mimeType === 'image/png' || mimeType === 'image/webp';
-}
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const TEXT_TYPES = new Set(['text/plain', 'text/csv', 'text/markdown']);
+/** Text read inline is truncated so one large log cannot crowd out the conversation. */
+const MAX_TEXT_CHARACTERS = 20000;
 
 const systemPrompt = `You are ProteinOS Coach, a careful strength-training and nutrition assistant.
 Use tools whenever an answer depends on the user's stored profile, goals, routines, workouts, nutrition, measurements, or exercise catalog. Never claim to have retrieved or changed data unless a tool result confirms it.
@@ -71,6 +93,7 @@ Deno.serve(async (request) => {
   const startedAt = performance.now();
   let runId: string | null = null;
   let userMessageId: string | null = null;
+  let uploadedFileIds: string[] = [];
   let createdConversationId: string | null = null;
   let client: any;
   try {
@@ -119,9 +142,11 @@ Deno.serve(async (request) => {
 
     // Only the newest turn carries images: re-sending every past attachment would grow
     // the request without bound as a conversation goes on.
-    const attachmentContent = attachmentPaths.length
+    const loaded = attachmentPaths.length
       ? await loadAttachments(client, auth.user.id, attachmentPaths)
-      : [];
+      : { content: [], openAIFileIds: [] };
+    const attachmentContent = loaded.content;
+    uploadedFileIds = loaded.openAIFileIds;
     const modelInput: any[] = [
       ...(previous ?? []).reverse().map((message: any) => ({ role: message.role, content: message.content })),
       attachmentContent.length
@@ -241,5 +266,13 @@ Deno.serve(async (request) => {
     }
     const failure = publicFailure(error);
     return json({ error: failure.message }, failure.status);
+  } finally {
+    // Files uploaded to OpenAI are only needed for the one request. They expire on their
+    // own after an hour, but deleting them here keeps the user's documents from sitting
+    // on a third party any longer than the turn that needed them.
+    for (const fileId of uploadedFileIds) {
+      await deleteOpenAIFile(fileId).catch((cleanupError) =>
+        console.error('Coach attachment cleanup failed', cleanupError instanceof Error ? cleanupError.message : 'unknown error'));
+    }
   }
 });
