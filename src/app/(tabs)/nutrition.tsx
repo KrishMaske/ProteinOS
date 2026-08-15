@@ -63,12 +63,18 @@ export default function NutritionScreen() {
               {entries.map((log) => {
                 const entryCalories = Math.round(log.food_log_items.reduce((sum, item) => sum + item.calories, 0));
                 const protein = Math.round(log.food_log_items.reduce((sum, item) => sum + (item.protein_grams ?? 0), 0));
+                // A single-item log carries its own count, so repeat quick-adds read as
+                // "Roti x4" rather than four rows saying the same thing.
+                const single = log.food_log_items.length === 1 ? log.food_log_items[0] : null;
+                const count = single && Number(single.quantity ?? 0) > 1 ? Math.round(Number(single.quantity)) : null;
                 return (
                   <Link key={log.id} href={{ pathname: '/nutrition/[id]', params: { id: log.id } }} asChild>
                     <PressableCard>
                       <View style={styles.mealRow}>
-                        <View style={[styles.mealIcon, { backgroundColor: colors.raised }]}><Ionicons name={log.source === 'photo_estimate' ? 'camera-outline' : 'restaurant-outline'} size={20} color={colors.primary} /></View>
-                        <View style={styles.flex}><AppText variant="heading" numberOfLines={2}>{log.name ?? 'Meal'}</AppText><AppText variant="caption" color={colors.muted}>{protein}g protein{log.source === 'photo_estimate' ? ' · photo estimate' : ''}</AppText></View>
+                        <View style={styles.flex}>
+                          <AppText variant="heading" numberOfLines={2}>{log.name ?? 'Meal'}{count ? ` x${count}` : ''}</AppText>
+                          <AppText variant="caption" color={colors.muted}>{protein}g protein{log.source === 'photo_estimate' ? ' · photo estimate' : ''}</AppText>
+                        </View>
                         <View style={styles.mealCalories}><AppText variant="heading">{entryCalories}</AppText><AppText variant="caption" color={colors.muted}>kcal</AppText></View>
                         <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                       </View>
@@ -200,7 +206,6 @@ const styles = StyleSheet.create({
   recipeSection: { minWidth: 0, gap: spacing.md, marginTop: -spacing.sm },
   group: { minWidth: 0, gap: spacing.sm },
   mealRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  mealIcon: { width: 42, height: 42, flexShrink: 0, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   mealCalories: { flexShrink: 0, alignItems: 'flex-end' },
   flex: { flex: 1, minWidth: 0 },
 });
