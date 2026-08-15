@@ -212,31 +212,36 @@ describe('healthyWeightRangeKg', () => {
 describe('healthyBodyFatRange', () => {
   it('uses the Gallagher bands for men', () => {
     expect(healthyBodyFatRange(30, 'male')).toMatchObject({ min: 8, max: 19 });
-    expect(healthyBodyFatRange(45, 'male')).toMatchObject({ min: 11, max: 21 });
-    expect(healthyBodyFatRange(65, 'male')).toMatchObject({ min: 13, max: 24 });
+    expect(healthyBodyFatRange(45, 'male')).toMatchObject({ min: 11, max: 22 });
+    expect(healthyBodyFatRange(65, 'male')).toMatchObject({ min: 13, max: 25 });
+    expect(healthyBodyFatRange(30, 'female')).toMatchObject({ min: 21, max: 33 });
+    expect(healthyBodyFatRange(45, 'female')).toMatchObject({ min: 23, max: 34 });
+    expect(healthyBodyFatRange(65, 'female')).toMatchObject({ min: 24, max: 36 });
   });
 
   it('uses higher bands for women at the same age', () => {
-    const male = healthyBodyFatRange(30, 'male');
-    const female = healthyBodyFatRange(30, 'female');
+    const male = healthyBodyFatRange(30, 'male')!;
+    const female = healthyBodyFatRange(30, 'female')!;
     expect(female.min).toBeGreaterThan(male.min);
     expect(female.max).toBeGreaterThan(male.max);
   });
 
   it('rises with age rather than holding one band for life', () => {
-    expect(healthyBodyFatRange(65, 'female').min).toBeGreaterThan(healthyBodyFatRange(25, 'female').min);
+    expect(healthyBodyFatRange(65, 'female')!.min).toBeGreaterThan(healthyBodyFatRange(25, 'female')!.min);
   });
 
   it('takes the midpoint of both sexes when unstated', () => {
-    const male = healthyBodyFatRange(30, 'male');
-    const female = healthyBodyFatRange(30, 'female');
-    const neutral = healthyBodyFatRange(30, null);
+    const male = healthyBodyFatRange(30, 'male')!;
+    const female = healthyBodyFatRange(30, 'female')!;
+    const neutral = healthyBodyFatRange(30, null)!;
     expect(neutral.min).toBe((male.min + female.min) / 2);
     expect(neutral.max).toBe((male.max + female.max) / 2);
   });
 
-  it('assumes 30 when no age is on record', () => {
-    expect(healthyBodyFatRange(null, 'male')).toMatchObject(healthyBodyFatRange(30, 'male'));
+  it('refuses to guess an age, since the bands move up to 6 points across age groups', () => {
+    expect(healthyBodyFatRange(null, 'male')).toBeNull();
+    expect(healthyBodyFatRange(undefined, 'male')).toBeNull();
+    expect(healthyBodyFatRange(0, 'male')).toBeNull();
   });
 });
 

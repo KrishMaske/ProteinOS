@@ -80,18 +80,20 @@ export const HEALTHY_BMI = { min: 18.5, max: 24.9 } as const;
 const HEALTHY_BODY_FAT: Record<BiologicalSex, { maxAge: number; min: number; max: number }[]> = {
   male: [
     { maxAge: 39, min: 8, max: 19 },
-    { maxAge: 59, min: 11, max: 21 },
-    { maxAge: Infinity, min: 13, max: 24 },
+    { maxAge: 59, min: 11, max: 22 },
+    { maxAge: Infinity, min: 13, max: 25 },
   ],
   female: [
-    { maxAge: 39, min: 21, max: 32 },
-    { maxAge: 59, min: 23, max: 33 },
-    { maxAge: Infinity, min: 24, max: 35 },
+    { maxAge: 39, min: 21, max: 33 },
+    { maxAge: 59, min: 23, max: 34 },
+    { maxAge: Infinity, min: 24, max: 36 },
   ],
+  // Midpoints of the two published sets, consistent with how BMR and RFM treat an
+  // unstated sex.
   unspecified: [
-    { maxAge: 39, min: 14.5, max: 25.5 },
-    { maxAge: 59, min: 17, max: 27 },
-    { maxAge: Infinity, min: 18.5, max: 29.5 },
+    { maxAge: 39, min: 14.5, max: 26 },
+    { maxAge: 59, min: 17, max: 28 },
+    { maxAge: Infinity, min: 18.5, max: 30.5 },
   ],
 };
 
@@ -188,11 +190,16 @@ export function healthyWeightRangeKg(heightCm: number) {
   };
 }
 
-/** Age- and sex-adjusted healthy body-fat band. Assumes 30 when no age is on record. */
-export function healthyBodyFatRange(age?: number | null, biologicalSex?: BiologicalSex | null) {
+/**
+ * Age- and sex-adjusted healthy body-fat band (Gallagher et al., 2000), the ranges that
+ * correspond to a healthy BMI at each age. Returns null without an age rather than
+ * assuming one: the bands differ by up to 6 points across the age groups, so a guessed
+ * age would quietly change the verdict.
+ */
+export function healthyBodyFatRange(age: number | null | undefined, biologicalSex?: BiologicalSex | null) {
+  if (!isPositive(age)) return null;
   const bands = HEALTHY_BODY_FAT[biologicalSex ?? 'unspecified'];
-  const effectiveAge = isPositive(age) ? age : 30;
-  return bands.find((entry) => effectiveAge <= entry.maxAge)!;
+  return bands.find((entry) => age <= entry.maxAge)!;
 }
 
 /**
@@ -202,6 +209,29 @@ export function healthyBodyFatRange(age?: number | null, biologicalSex?: Biologi
 export function positionInRange(value: number, min: number, max: number) {
   if (max <= min) return 0;
   return Math.min(1, Math.max(0, (value - min) / (max - min)));
+}
+
+/**
+ * Human-readable derivations so a number on screen can be checked by hand rather than
+ * taken on trust. Values are rounded the same way the displayed figures are.
+ */
+export function explainBmi(weightKg: number, heightCm: number) {
+  const heightM = heightCm / 100;
+  return `${weightKg} kg ÷ (${heightM.toFixed(2)} m)² = ${bodyMassIndex(weightKg, heightCm)}`;
+}
+
+export function explainBodyFat(estimate: BodyFatEstimate, inputs: BodyCompositionInputs) {
+  const sex = inputs.biologicalSex ?? 'unspecified';
+  if (estimate.method === 'measured') return 'Taken from the body fat you logged.';
+  if (estimate.method === 'rfm') {
+    return `RFM: ${RFM_INTERCEPT[sex]} − 20 × (${inputs.heightCm} cm height ÷ ${inputs.waistCm} cm waist) = ${estimate.percent}%`;
+  }
+  const bmi = bodyMassIndex(inputs.weightKg, inputs.heightCm);
+  return `Deurenberg: 1.20 × ${bmi} BMI + 0.23 × ${inputs.age} yrs − 10.8 × ${DEURENBERG_SEX[sex]} − 5.4 = ${estimate.percent}%`;
+}
+
+export function explainLeanMass(weightKg: number, percent: number) {
+  return `${weightKg} kg × (100 − ${percent})% = ${Math.round(weightKg * (1 - percent / 100) * 10) / 10} kg lean`;
 }
 
 export type RangeVerdict = 'below' | 'within' | 'above';

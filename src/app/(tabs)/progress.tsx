@@ -9,16 +9,18 @@ import { TrendChart } from '@/features/progress/components/trend-chart';
 import { useProgressDashboard } from '@/features/progress/hooks/use-progress';
 import {
   bmiCategory,
+  explainBmi,
+  explainBodyFat,
+  explainLeanMass,
   healthyBodyFatRange,
   healthyWeightRangeKg,
   positionInRange,
   verdictForRange,
   HEALTHY_BMI,
-  type BodyFatEstimate,
   type RangeVerdict,
 } from '@/features/progress/services/body-composition';
 import { useUpdateSettings } from '@/features/settings/hooks/use-settings';
-import { summarizeComposition, weeklyComposition, type CompositionSummary } from '@/features/progress/services/weekly-body-metrics';
+import { summarizeComposition, weeklyComposition } from '@/features/progress/services/weekly-body-metrics';
 import { sevenDayMovingAverage } from '@/features/progress/services/moving-average';
 import { summarizeRecomposition } from '@/features/progress/services/recomposition-summary';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -81,7 +83,7 @@ export default function ProgressScreen() {
 
   return (
     <Screen safeEdges={['top', 'left', 'right']}>
-      <View style={styles.header}><AppText variant="title">Progress</AppText><AppText color={colors.muted}>See the direction, not the daily noise.</AppText></View>
+      <View style={styles.header}><AppText variant="title">Progress</AppText></View>
       <View style={[styles.segments, { backgroundColor: colors.surface }]}>{segments.map(({ key, label }) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: segment === key }} key={key} onPress={() => setSegment(key)} style={[styles.segment, segment === key && { backgroundColor: colors.softAccent }]}><AppText variant="caption" numberOfLines={1} color={segment === key ? colors.primary : colors.muted}>{label}</AppText></Pressable>)}</View>
       <View style={styles.ranges}>{(['1M', '3M', '6M', '1Y', 'All'] as const).map((item) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: range === item }} key={item} onPress={() => setRange(item)} style={[styles.range, range === item && { backgroundColor: colors.softAccent }]}><AppText variant="caption" color={range === item ? colors.primary : colors.muted}>{item}</AppText></Pressable>)}</View>
 
@@ -94,7 +96,6 @@ export default function ProgressScreen() {
                 : <View style={[styles.summary, { backgroundColor: colors.softAccent }]}><AppText variant="eyebrow" color={summary.kind === 'positive' ? colors.primary : colors.muted}>{summary.title}</AppText><AppText>{summary.detail}</AppText></View>}
               {weights.length > 1 ? <Card><AppText variant="heading">Weight · {imperial ? 'lb' : 'kg'}</AppText><TrendChart values={weights} label="Weight" />{weightAverage.length > 1 ? <AppText variant="caption" color={colors.muted}>7-day average: {weightAverage.at(-1)?.toFixed(1)} {imperial ? 'lb' : 'kg'}</AppText> : null}</Card> : null}
               {waists.length > 1 ? <Card><AppText variant="heading">Waist · {imperial ? 'in' : 'cm'}</AppText><TrendChart values={waists} label="Waist" /></Card> : null}
-              {composition ? <BodyComposition summary={composition} series={bodyFatSeries} imperial={imperial} /> : null}
               <View style={styles.actions}><Link href="/progress/log" asChild><Button style={styles.growingAction}>Log measurement</Button></Link><Link href="/progress/photo" asChild><Button style={styles.growingAction} variant="secondary">Add progress photo</Button></Link></View>
               <SectionHeader title="Saved measurements" action={savedMetrics.length > 5 ? <Pressable accessibilityRole="button" onPress={() => setShowAllMetrics((current) => !current)} hitSlop={8}><AppText variant="caption" color={colors.primary}>{showAllMetrics ? 'Show less' : 'View all'}</AppText></Pressable> : undefined} />
               <Card style={styles.measurementList}>
@@ -191,7 +192,15 @@ function CompositionSegment({ composition, profile, bodyFatSeries, goalBand, imp
   const healthyWeight = healthyWeightRangeKg(profile.heightCm);
   const healthyFat = healthyBodyFatRange(profile.age, profile.biologicalSex);
   const mass = (kg: number) => `${Math.round(imperial ? kgToLb(kg) : kg)} ${imperial ? 'lb' : 'kg'}`;
-  const fatVerdict = current.fat ? verdictForRange(current.fat.percent, healthyFat.min, healthyFat.max) : null;
+  const fatInputs = {
+    weightKg: current.weightKg ?? 0,
+    heightCm: profile.heightCm,
+    waistCm: current.waistCm,
+    age: profile.age,
+    biologicalSex: profile.biologicalSex,
+    measuredBodyFatPercent: current.bodyFatPercent,
+  };
+  const fatVerdict = current.fat && healthyFat ? verdictForRange(current.fat.percent, healthyFat.min, healthyFat.max) : null;
   const goalVerdict = current.fat && goalBand ? verdictForRange(current.fat.percent, goalBand.min, goalBand.max) : null;
 
   return (
@@ -207,10 +216,9 @@ function CompositionSegment({ composition, profile, bodyFatSeries, goalBand, imp
             <AppText variant="heading" color={bmiCategory(current.bmi) === 'healthy' ? colors.primary : colors.danger}>{current.bmi.toFixed(1)}</AppText>
           </View>
           <RangeGauge value={current.bmi} min={HEALTHY_BMI.min} max={HEALTHY_BMI.max} axisMin={15} axisMax={35} />
-          <AppText variant="caption" color={colors.muted}>
-            {bmiLabels[bmiCategory(current.bmi)]}
-            {healthyWeight ? ` · a healthy weight for your height is ${mass(healthyWeight.minKg)}–${mass(healthyWeight.maxKg)}` : ''}
-          </AppText>
+          <AppText variant="caption" color={colors.muted}>{bmiLabels[bmiCategory(current.bmi)]}</AppText>
+          {healthyWeight ? <AppText variant="caption" color={colors.muted}>Healthy weight for your height: {mass(healthyWeight.minKg)}–{mass(healthyWeight.maxKg)}</AppText> : null}
+          {current.weightKg !== null ? <AppText variant="caption" color={colors.muted} style={styles.formula}>{explainBmi(current.weightKg, profile.heightCm)}</AppText> : null}
         </Card>
       ) : null}
 
@@ -218,15 +226,30 @@ function CompositionSegment({ composition, profile, bodyFatSeries, goalBand, imp
         <Card>
           <View style={styles.compositionHeading}>
             <AppText variant="heading">Body fat</AppText>
-            <AppText variant="heading" color={fatVerdict === 'within' ? colors.primary : colors.danger}>{current.fat.percent.toFixed(1)}%</AppText>
+            <AppText variant="heading" color={healthyFat && fatVerdict !== 'within' ? colors.danger : colors.primary}>{current.fat.percent.toFixed(1)}%</AppText>
           </View>
-          <RangeGauge value={current.fat.percent} min={healthyFat.min} max={healthyFat.max} axisMin={3} axisMax={45} unit="%" />
-          <AppText variant="caption" color={colors.muted}>
-            {verdictCopy[fatVerdict!]} for {profile.age ? `age ${profile.age}` : 'your age'}. {methodNotes[current.fat.method]}
-          </AppText>
-          {current.fat.leanMassKg !== null ? (
-            <AppText variant="caption" color={colors.muted}>{mass(current.fat.leanMassKg)} lean · {mass(current.fat.fatMassKg!)} fat</AppText>
-          ) : null}
+          {healthyFat ? (
+            <>
+              <RangeGauge value={current.fat.percent} min={healthyFat.min} max={healthyFat.max} axisMin={3} axisMax={45} unit="%" />
+              <AppText variant="caption" color={colors.muted}>{verdictCopy[fatVerdict!]} for age {profile.age}</AppText>
+            </>
+          ) : (
+            // The healthy band shifts by up to 6 points across age groups, so without a
+            // birth date there is no honest range to draw.
+            <AppText variant="caption" color={colors.muted}>Add your birth date in settings to see the healthy range for your age.</AppText>
+          )}
+          <AppText variant="caption" color={colors.muted} style={styles.formula}>{explainBodyFat(current.fat, fatInputs)}</AppText>
+        </Card>
+      ) : null}
+
+      {current.fat?.leanMassKg !== null && current.fat?.leanMassKg !== undefined ? (
+        <Card>
+          <View style={styles.compositionHeading}>
+            <AppText variant="heading">Lean mass</AppText>
+            <AppText variant="heading" color={colors.primary}>{mass(current.fat.leanMassKg)}</AppText>
+          </View>
+          <AppText variant="caption" color={colors.muted}>{mass(current.fat.fatMassKg!)} fat · everything else is muscle, bone, organs and water</AppText>
+          <AppText variant="caption" color={colors.muted} style={styles.formula}>{explainLeanMass(current.weightKg!, current.fat.percent)}</AppText>
         </Card>
       ) : null}
 
@@ -241,14 +264,16 @@ function CompositionSegment({ composition, profile, bodyFatSeries, goalBand, imp
         </View>
         {goalBand && !editingGoal ? (
           <>
-            <AppText variant="number" style={styles.goalValue}>{goalBand.min}–{goalBand.max}%</AppText>
+            <AppText variant="number" style={styles.goalValue}>
+              {goalBand.min === goalBand.max ? `${goalBand.min}%` : `${goalBand.min}–${goalBand.max}%`}
+            </AppText>
             {goalVerdict ? (
               <AppText variant="caption" color={goalVerdict === 'within' ? colors.primary : colors.muted}>
                 {goalVerdict === 'within'
-                  ? 'You are in your target band. Calories hold at maintenance.'
+                  ? 'On target. Calories hold at maintenance.'
                   : goalVerdict === 'above'
-                    ? `${(current.fat!.percent - goalBand.max).toFixed(1)} points to go. The deficit eases off over the last 3 points.`
-                    : `${(goalBand.min - current.fat!.percent).toFixed(1)} points below target. A surplus is applied.`}
+                    ? `${(current.fat!.percent - goalBand.max).toFixed(1)} points to go.`
+                    : `${(goalBand.min - current.fat!.percent).toFixed(1)} points below target.`}
               </AppText>
             ) : null}
           </>
@@ -271,34 +296,31 @@ function CompositionSegment({ composition, profile, bodyFatSeries, goalBand, imp
         <Card>
           <AppText variant="heading">Body fat trend</AppText>
           <TrendChart values={bodyFatSeries} label="Weekly body fat percentage" />
-          <AppText variant="caption" color={colors.muted}>One point per week, so a heavy day cannot move it.</AppText>
         </Card>
       ) : null}
     </>
   );
 }
 
-/** Presets keyed off the user's own healthy band, plus a free-entry pair for anything else. */
+/** A single target is stored as a band with both bounds equal, so the taper logic is shared. */
 function GoalBodyFatPicker({ healthy, initial, pending, onCancel, onSave }: {
-  healthy: { min: number; max: number };
+  healthy: { min: number; max: number } | null;
   initial: { min: number; max: number } | null;
   pending: boolean;
   onCancel?: () => void;
   onSave: (band: { min: number; max: number } | null) => void;
 }) {
   const { colors } = useAppTheme();
+  const [mode, setMode] = useState<'single' | 'range'>(initial && initial.min !== initial.max ? 'range' : 'single');
   const [min, setMin] = useState(initial ? String(initial.min) : '');
   const [max, setMax] = useState(initial ? String(initial.max) : '');
   const [error, setError] = useState<string | null>(null);
-  const presets = [
-    { label: 'Athletic', min: Math.max(3, healthy.min - 3), max: healthy.min + 2 },
-    { label: 'Healthy', min: healthy.min, max: healthy.max },
-    { label: 'Leaner', min: Math.max(3, healthy.min - 1), max: Math.round((healthy.min + healthy.max) / 2) },
-  ];
 
   function save() {
-    const low = Number(min), high = Number(max);
-    if (!Number.isFinite(low) || !Number.isFinite(high) || !min.trim() || !max.trim()) return setError('Enter both ends of the range.');
+    const low = Number(min);
+    if (!min.trim() || !Number.isFinite(low)) return setError('Enter a target percentage.');
+    const high = mode === 'single' ? low : Number(max);
+    if (mode === 'range' && (!max.trim() || !Number.isFinite(high))) return setError('Enter both ends of the range.');
     if (low < 3 || high > 60) return setError('Body fat goals must sit between 3% and 60%.');
     if (low > high) return setError('The lower bound must not exceed the upper bound.');
     setError(null);
@@ -307,27 +329,37 @@ function GoalBodyFatPicker({ healthy, initial, pending, onCancel, onSave }: {
 
   return (
     <>
-      <AppText variant="caption" color={colors.muted}>
-        A range rather than a single number, because a tape-based estimate carries a few points of error. This steers your calorie target and what Coach recommends.
-      </AppText>
-      <View style={styles.presetRow}>
-        {presets.map((preset) => (
+      <View style={styles.modeRow}>
+        {(['single', 'range'] as const).map((option) => (
           <Pressable
-            accessibilityRole="button"
-            key={preset.label}
-            onPress={() => { setMin(String(preset.min)); setMax(String(preset.max)); setError(null); }}
-            style={({ pressed }) => [styles.preset, { backgroundColor: colors.raised, opacity: pressed ? 0.7 : 1 }]}>
-            <AppText variant="caption">{preset.label}</AppText>
-            <AppText variant="caption" color={colors.muted}>{preset.min}–{preset.max}%</AppText>
+            accessibilityRole="radio"
+            accessibilityState={{ checked: mode === option }}
+            key={option}
+            onPress={() => { setMode(option); setError(null); }}
+            style={[styles.modeOption, mode === option && { backgroundColor: colors.softAccent }]}>
+            <AppText variant="caption" color={mode === option ? colors.primary : colors.muted}>
+              {option === 'single' ? 'Single target' : 'Range'}
+            </AppText>
           </Pressable>
         ))}
       </View>
+      {healthy ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => { setMode('range'); setMin(String(healthy.min)); setMax(String(healthy.max)); setError(null); }}
+          style={({ pressed }) => [styles.preset, { backgroundColor: colors.raised, opacity: pressed ? 0.7 : 1 }]}>
+          <AppText variant="caption">Use the healthy range for my age</AppText>
+          <AppText variant="caption" color={colors.muted}>{healthy.min}–{healthy.max}%</AppText>
+        </Pressable>
+      ) : null}
       <View style={styles.goalFields}>
-        <Field containerStyle={styles.goalField} label="From (%)" keyboardType="decimal-pad" value={min} onChangeText={setMin} placeholder={String(healthy.min)} />
-        <Field containerStyle={styles.goalField} label="To (%)" keyboardType="decimal-pad" value={max} onChangeText={setMax} placeholder={String(healthy.max)} />
+        <Field containerStyle={styles.goalField} label={mode === 'single' ? 'Target (%)' : 'From (%)'} keyboardType="decimal-pad" value={min} onChangeText={setMin} placeholder={healthy ? String(healthy.min) : '15'} />
+        {mode === 'range' ? (
+          <Field containerStyle={styles.goalField} label="To (%)" keyboardType="decimal-pad" value={max} onChangeText={setMax} placeholder={healthy ? String(healthy.max) : '20'} />
+        ) : null}
       </View>
       {error ? <AppText variant="caption" color={colors.danger}>{error}</AppText> : null}
-      <Button disabled={pending} onPress={save}>{pending ? 'Saving…' : 'Save goal range'}</Button>
+      <Button disabled={pending} onPress={save}>{pending ? 'Saving…' : 'Save goal'}</Button>
       {initial ? <Button variant="ghost" disabled={pending} onPress={() => onSave(null)}>Clear goal</Button> : null}
       {onCancel ? <Button variant="ghost" onPress={onCancel}>Cancel</Button> : null}
     </>
@@ -341,71 +373,7 @@ const bmiLabels: Record<ReturnType<typeof bmiCategory>, string> = {
   obese: 'Obese',
 };
 
-const fatLabels: Record<BodyFatEstimate['category'], string> = {
-  essential: 'Essential fat only',
-  athletic: 'Athletic',
-  fitness: 'Fitness',
-  average: 'Average',
-  obese: 'Obese',
-};
 
-const methodNotes: Record<BodyFatEstimate['method'], string> = {
-  measured: 'From the body fat you logged.',
-  rfm: 'Relative Fat Mass, from your height and waist.',
-  deurenberg: 'Estimated from BMI and age. Log a waist measurement for a closer read.',
-};
-
-function BodyComposition({ summary, series, imperial }: { summary: CompositionSummary; series: number[]; imperial: boolean }) {
-  const { colors } = useAppTheme();
-  const { current, bmiChange, bodyFatChange } = summary;
-  const fat = current.fat;
-  const mass = (kg: number) => `${Math.round(imperial ? kgToLb(kg) : kg)} ${imperial ? 'lb' : 'kg'}`;
-  const delta = (change: number | null, unit: string) =>
-    change === null ? 'first week' : Math.abs(change) < 0.05 ? 'holding' : `${change > 0 ? '+' : ''}${change.toFixed(1)}${unit} vs last week`;
-
-  return (
-    <Card>
-      <View style={styles.sectionTitle}>
-        <AppText variant="heading">Body composition</AppText>
-        <AppText variant="caption" color={colors.muted}>{current.readings} log{current.readings === 1 ? '' : 's'} this week</AppText>
-      </View>
-      <View style={styles.compositionRow}>
-        {current.bmi !== null ? (
-          <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
-            <AppText variant="caption" color={colors.muted}>BMI</AppText>
-            <AppText variant="heading">{current.bmi.toFixed(1)}</AppText>
-            <AppText variant="caption" color={colors.muted}>{bmiLabels[bmiCategory(current.bmi)]}</AppText>
-            <AppText variant="caption" color={colors.muted}>{delta(bmiChange, '')}</AppText>
-          </View>
-        ) : null}
-        {fat ? (
-          <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
-            <AppText variant="caption" color={colors.muted}>Body fat</AppText>
-            <AppText variant="heading">{fat.percent.toFixed(1)}%</AppText>
-            <AppText variant="caption" color={colors.muted}>{fatLabels[fat.category]}</AppText>
-            <AppText variant="caption" color={colors.muted}>{delta(bodyFatChange, ' pts')}</AppText>
-          </View>
-        ) : null}
-        {fat?.leanMassKg !== null && fat?.leanMassKg !== undefined ? (
-          <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
-            <AppText variant="caption" color={colors.muted}>Lean mass</AppText>
-            <AppText variant="heading">{mass(fat.leanMassKg)}</AppText>
-            <AppText variant="caption" color={colors.muted}>{mass(fat.fatMassKg ?? 0)} fat</AppText>
-          </View>
-        ) : null}
-      </View>
-      {series.length > 1 ? <TrendChart values={series} label="Weekly body fat percentage" /> : null}
-      {fat ? (
-        <AppText variant="caption" color={colors.muted}>
-          {methodNotes[fat.method]}
-          {fat.standardErrorPoints === null
-            ? ''
-            : ` Figures use this week's average, not a single day. Tape estimates land within about ${fat.standardErrorPoints} points of a DXA scan, so track the direction rather than the exact number.`}
-        </AppText>
-      ) : null}
-    </Card>
-  );
-}
 
 const styles = StyleSheet.create({
   header: { minWidth: 0, gap: spacing.xs },
@@ -421,6 +389,9 @@ const styles = StyleSheet.create({
   gaugePin: { position: 'absolute', width: 4, top: -2, bottom: -2, borderRadius: 2, marginLeft: -2 },
   gaugeLabels: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   goalValue: { fontSize: 32, lineHeight: 36 },
+  formula: { fontVariant: ['tabular-nums'] },
+  modeRow: { flexDirection: 'row', gap: spacing.xs },
+  modeOption: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
   presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   preset: { flexGrow: 1, flexBasis: 96, minWidth: 0, minHeight: 52, borderRadius: radius.md, paddingHorizontal: spacing.sm, alignItems: 'center', justifyContent: 'center', gap: 2 },
   goalFields: { flexDirection: 'row', gap: spacing.sm },
