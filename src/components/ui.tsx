@@ -30,30 +30,37 @@ type ScreenProps = PropsWithChildren<{
 
 export function Screen({ children, contentContainerStyle, footer, safeEdges = ['left', 'right', 'bottom'], scroll = true }: ScreenProps) {
   const { colors } = useAppTheme();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const compact = width < 380;
 
-  // KeyboardAvoidingView sizes its padding from the gap between its own frame bottom and
-  // the top of the keyboard. Nested inside a SafeAreaView that pads the bottom, its frame
-  // stops short of the screen by the home-indicator inset and it under-pads by exactly
-  // that much, leaving the footer input under the keyboard. So the view is allowed to
-  // reach the real screen bottom and the footer carries the inset itself - dropped while
-  // the keyboard is up, where there is no home indicator to clear.
+  // KeyboardAvoidingView infers its padding from its own measured frame, which is wrong
+  // whenever an ancestor pads or offsets it - safe-area insets, modal presentation - and
+  // it fails silently by leaving the footer under the keyboard. The keyboard's own frame
+  // is unambiguous: screen height minus the top of the keyboard is exactly how much of
+  // the screen it covers, so that is applied directly.
+  //
+  // The view must reach the real screen bottom for that to hold, so the footer takes over
+  // the bottom safe-area inset and drops it while the keyboard is up.
   const ownsBottomInset = Boolean(footer) && safeEdges.includes('bottom');
   const edges = ownsBottomInset ? safeEdges.filter((edge) => edge !== 'bottom') : safeEdges;
+  // Android resizes the window itself via softwareKeyboardLayoutMode, so padding there
+  // would double count.
+  const measuresKeyboard = Boolean(footer) && Platform.OS === 'ios';
 
   useEffect(() => {
-    if (!ownsBottomInset) return;
-    const ios = Platform.OS === 'ios';
-    const show = Keyboard.addListener(ios ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardOpen(true));
-    const hide = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardOpen(false));
+    if (!measuresKeyboard) return;
+    const change = Keyboard.addListener('keyboardWillChangeFrame', (event) => {
+      setKeyboardInset(Math.max(0, height - event.endCoordinates.screenY));
+    });
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardInset(0));
     return () => {
-      show.remove();
+      change.remove();
       hide.remove();
     };
-  }, [ownsBottomInset]);
+  }, [height, measuresKeyboard]);
+
   const content = <View style={[styles.screenContent, compact && styles.compactScreenContent, contentContainerStyle]}>{children}</View>;
   const scrollContent = scroll ? (
     <ScrollView
@@ -69,9 +76,11 @@ export function Screen({ children, contentContainerStyle, footer, safeEdges = ['
   return (
     <SafeAreaView edges={edges} style={[styles.safe, { backgroundColor: colors.background }]}>
       {footer || !scroll ? (
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safe}>
+        <KeyboardAvoidingView
+          behavior={measuresKeyboard ? undefined : Platform.OS === 'ios' ? 'padding' : undefined}
+          style={[styles.safe, measuresKeyboard && { paddingBottom: keyboardInset }]}>
           {scrollContent}
-          {footer ? <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.line }, ownsBottomInset && !keyboardOpen && { paddingBottom: insets.bottom }]}><View style={[styles.footerInner, compact && styles.compactFooterInner]}>{footer}</View></View> : null}
+          {footer ? <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.line }, ownsBottomInset && keyboardInset === 0 && { paddingBottom: insets.bottom }]}><View style={[styles.footerInner, compact && styles.compactFooterInner]}>{footer}</View></View> : null}
         </KeyboardAvoidingView>
       ) : scrollContent}
     </SafeAreaView>

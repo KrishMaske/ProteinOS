@@ -224,6 +224,9 @@ export default function CoachScreen() {
         {activeId && conversationQuery.isLoading ? <LoadingState label="Opening conversation…" /> : (
           <FlatList
             ref={listRef}
+            // Without flex the list sizes to its content, so it cannot give space back
+            // when the keyboard shrinks the screen and the composer is pushed under it.
+            style={styles.messageList}
             data={messages}
             keyExtractor={(item) => item.id}
             contentContainerStyle={[styles.messages, !messages.length && styles.emptyMessages]}
@@ -424,6 +427,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, paddingTop: spacing.lg, paddingBottom: 0, gap: spacing.md },
   header: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   headerCopy: { flex: 1, minWidth: 0 },
+  messageList: { flex: 1 },
   messages: { gap: spacing.xl, paddingVertical: spacing.lg },
   emptyMessages: { flexGrow: 1, justifyContent: 'center' },
   messageRow: { minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
