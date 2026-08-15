@@ -105,7 +105,7 @@ export default function ProgressScreen() {
           ? <EmptyState title="Start with a baseline" description="Log weight or a measurement to begin seeing useful trends." action={<Link href="/progress/log" asChild><Button>Log measurement</Button></Link>} />
           : <>
               {summary.kind === 'insufficient'
-                ? <EmptyState title={summary.title} description={summary.detail} action={<Link href="/progress/log" asChild><Button>Log measurement</Button></Link>} />
+                ? <EmptyState title={summary.title} description={summary.detail} />
                 : <View style={[styles.summary, { backgroundColor: colors.softAccent }]}><AppText variant="eyebrow" color={summary.kind === 'positive' ? colors.primary : colors.muted}>{summary.title}</AppText><AppText>{summary.detail}</AppText></View>}
               {weights.length > 1 ? <Card><AppText variant="heading">Weight · {imperial ? 'lb' : 'kg'}</AppText><TrendChart values={weights} label="Weight" />{weightAverage.length > 1 ? <AppText variant="caption" color={colors.muted}>7-day average: {weightAverage.at(-1)?.toFixed(1)} {imperial ? 'lb' : 'kg'}</AppText> : null}</Card> : null}
               {waists.length > 1 ? <Card><AppText variant="heading">Waist · {imperial ? 'in' : 'cm'}</AppText><TrendChart values={waists} label="Waist" /></Card> : null}
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
   range: { minWidth: 0, flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
   summary: { borderRadius: radius.lg, padding: spacing.lg, gap: spacing.sm },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  growingAction: { flexGrow: 1, flexBasis: 148 },
+  growingAction: { flexGrow: 1, flexBasis: 148, minHeight: 44, paddingHorizontal: spacing.md },
   measurementList: { paddingVertical: spacing.xs, gap: 0 },
   measurementRow: { minWidth: 0, height: 60, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   measurementCopy: { flex: 1, minWidth: 0, gap: 2 },
