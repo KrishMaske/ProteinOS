@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useRef, useState, type ComponentProps, type PropsWithChildren, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type PropsWithChildren, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -30,22 +30,31 @@ type ScreenProps = PropsWithChildren<{
 
 export function Screen({ children, contentContainerStyle, footer, safeEdges = ['left', 'right', 'bottom'], scroll = true }: ScreenProps) {
   const { colors } = useAppTheme();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const frameRef = useRef<View>(null);
+  // Where the container actually ends, in window coordinates. Cached from layout so the
+  // keyboard handler stays synchronous: measureInWindow is a callback, and depending on
+  // it there meant one missed call left the inset at zero and every footer covered.
+  const frameBottom = useRef<number | null>(null);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const compact = width < 380;
 
-  // KeyboardAvoidingView infers its padding from its own frame and gets it wrong whenever
-  // an ancestor pads or offsets it, failing silently by leaving the footer under the
-  // keyboard. Both parts are measured instead: the keyboard reports where its top edge
-  // sits, and the container is measured in window coordinates, so the overlap is exact
-  // however the screen is nested - full screen, modal sheet, or below a native header.
+  // KeyboardAvoidingView infers padding from its own frame and gets it wrong whenever an
+  // ancestor pads or offsets it. The keyboard reports the top of its frame, and the
+  // cached container bottom says how far the container reaches, so the overlap is exact
+  // for a full screen route and for a modal sheet that stops short of it.
   const ownsBottomInset = Boolean(footer) && safeEdges.includes('bottom');
   const edges = ownsBottomInset ? safeEdges.filter((edge) => edge !== 'bottom') : safeEdges;
   // Android resizes its own window through softwareKeyboardLayoutMode, where extra
   // padding would double count.
   const measuresKeyboard = Boolean(footer) && Platform.OS === 'ios';
+
+  const cacheFrame = useCallback(() => {
+    frameRef.current?.measureInWindow((_x, y, _w, measuredHeight) => {
+      if (Number.isFinite(y) && Number.isFinite(measuredHeight)) frameBottom.current = y + measuredHeight;
+    });
+  }, []);
 
   useEffect(() => {
     if (!measuresKeyboard) return;
@@ -54,9 +63,10 @@ export function Screen({ children, contentContainerStyle, footer, safeEdges = ['
         setKeyboardInset(0);
         return;
       }
-      frameRef.current?.measureInWindow((_x, y, _w, measuredHeight) => {
-        setKeyboardInset(Math.max(0, y + measuredHeight - keyboardTop));
-      });
+      // Falling back to the window bottom keeps a full screen route correct even if the
+      // measurement has not landed yet.
+      const bottom = frameBottom.current ?? height;
+      setKeyboardInset(Math.max(0, bottom - keyboardTop));
     };
     const change = Keyboard.addListener('keyboardWillChangeFrame', (event) => overlap(event.endCoordinates.screenY));
     const hide = Keyboard.addListener('keyboardWillHide', () => overlap(null));
@@ -64,7 +74,7 @@ export function Screen({ children, contentContainerStyle, footer, safeEdges = ['
       change.remove();
       hide.remove();
     };
-  }, [measuresKeyboard]);
+  }, [height, measuresKeyboard]);
 
   const content = <View style={[styles.screenContent, compact && styles.compactScreenContent, contentContainerStyle]}>{children}</View>;
   const scrollContent = scroll ? (
@@ -90,7 +100,7 @@ export function Screen({ children, contentContainerStyle, footer, safeEdges = ['
       {footer || !scroll ? (
         measuresKeyboard ? (
           // Own padding, so a plain View is enough and can carry the measuring ref.
-          <View ref={frameRef} style={[styles.safe, { paddingBottom: keyboardInset }]}>{body}</View>
+          <View ref={frameRef} onLayout={cacheFrame} style={[styles.safe, { paddingBottom: keyboardInset }]}>{body}</View>
         ) : (
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safe}>{body}</KeyboardAvoidingView>
         )
