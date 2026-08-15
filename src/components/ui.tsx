@@ -42,7 +42,10 @@ export function Screen({ children, contentContainerStyle, footer, safeEdges = ['
   // the screen it covers, so that is applied directly.
   //
   // The view must reach the real screen bottom for that to hold, so the footer takes over
-  // the bottom safe-area inset and drops it while the keyboard is up.
+  // the bottom safe-area inset. It keeps that inset while the keyboard is up rather than
+  // dropping it: computing the overlap exactly proved unreliable across modal sheets and
+  // full-screen routes, and the spare inset absorbs whatever the calculation misses. A
+  // slightly larger gap above the keyboard is a far better failure than a covered button.
   const ownsBottomInset = Boolean(footer) && safeEdges.includes('bottom');
   const edges = ownsBottomInset ? safeEdges.filter((edge) => edge !== 'bottom') : safeEdges;
   // Android resizes the window itself via softwareKeyboardLayoutMode, so padding there
@@ -86,7 +89,7 @@ export function Screen({ children, contentContainerStyle, footer, safeEdges = ['
           behavior={measuresKeyboard ? undefined : Platform.OS === 'ios' ? 'padding' : undefined}
           style={[styles.safe, measuresKeyboard && { paddingBottom: keyboardInset }]}>
           {scrollContent}
-          {footer ? <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.line }, ownsBottomInset && keyboardInset === 0 && { paddingBottom: insets.bottom }]}><View style={[styles.footerInner, compact && styles.compactFooterInner]}>{footer}</View></View> : null}
+          {footer ? <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.line }, ownsBottomInset && { paddingBottom: insets.bottom }]}><View style={[styles.footerInner, compact && styles.compactFooterInner]}>{footer}</View></View> : null}
         </KeyboardAvoidingView>
       ) : scrollContent}
     </SafeAreaView>
