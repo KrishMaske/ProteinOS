@@ -137,6 +137,11 @@ export const coachTools = [
     parameters: strictObject({ days: { type: 'integer', minimum: 7, maximum: 180 } }),
   },
   {
+    type: 'function', name: 'get_gym_comparison', strict: true,
+    description: 'Compare logged performance per gym for one exercise, or across all exercises. Weights can differ between gyms through plate calibration and machine brands, so use this before reading a load change as progress or regression.',
+    parameters: strictObject({ exerciseKey: nullableString, limit: { type: 'integer', minimum: 1, maximum: 50 } }),
+  },
+  {
     type: 'function', name: 'create_routine_draft', strict: true,
     description: 'Create a reviewable ordered workout cycle using only verified exercise IDs. Include explicit rest slots and expand alternating A/B patterns into their full repeating cycle. Never activates it.',
     parameters: strictObject({
@@ -533,6 +538,13 @@ export async function executeCoachTool(client: SupabaseClient, userId: string, n
     }
     case 'get_training_summary':
       return dataOrThrow(await client.from('weekly_workout_summary').select('*').gte('week_start', daysAgo(args.days)).order('week_start', { ascending: false }));
+    case 'get_gym_comparison': {
+      let query = client.from('gym_exercise_performance').select('*').order('last_logged_at', { ascending: false });
+      if (args.exerciseKey) query = query.eq('exercise_key', args.exerciseKey);
+      const { data, error } = await query.limit(Math.min(args.limit ?? 20, 50));
+      if (error) throw error;
+      return { comparison: data ?? [] };
+    }
     case 'create_routine_draft':
       return createRoutineDraft(client, userId, args);
     default:

@@ -32,6 +32,7 @@ function AppNavigator() {
             header under the status bar and the composer under the home indicator. */}
         <Stack.Screen name="coach" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings', presentation: 'modal' }} />
+        <Stack.Screen name="gyms" options={{ title: 'Gyms' }} />
         <Stack.Screen name="exercises/index" options={{ title: 'Exercises' }} />
         <Stack.Screen name="exercise/[id]" options={{ title: 'Exercise' }} />
         <Stack.Screen name="routine/[id]" options={{ title: 'Routine' }} />

@@ -427,6 +427,36 @@ export type Database = {
         }
         Relationships: []
       }
+      gyms: {
+        Row: {
+          created_at: string
+          id: string
+          is_default: boolean
+          name: string
+          notes: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name: string
+          notes?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          name?: string
+          notes?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       nutrition_targets: {
         Row: {
           calories: number
@@ -1047,6 +1077,7 @@ export type Database = {
           completed_at: string | null
           created_at: string
           duration_seconds: number | null
+          gym_id: string | null
           id: string
           name: string
           notes: string | null
@@ -1061,6 +1092,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           duration_seconds?: number | null
+          gym_id?: string | null
           id?: string
           name: string
           notes?: string | null
@@ -1075,6 +1107,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           duration_seconds?: number | null
+          gym_id?: string | null
           id?: string
           name?: string
           notes?: string | null
@@ -1086,6 +1119,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "workout_sessions_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gyms"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "workout_sessions_routine_day_id_fkey"
             columns: ["routine_day_id"]
@@ -1179,6 +1219,7 @@ export type Database = {
           exercise_id: string | null
           exercise_key: string | null
           exercise_name: string | null
+          gym_id: string | null
           reps: number | null
           rir: number | null
           rpe: number | null
@@ -1201,6 +1242,13 @@ export type Database = {
             columns: ["exercise_id"]
             isOneToOne: false
             referencedRelation: "exercise_catalog"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workout_sessions_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gyms"
             referencedColumns: ["id"]
           },
         ]
@@ -1232,6 +1280,34 @@ export type Database = {
           user_id: string | null
         }
         Relationships: []
+      }
+      gym_exercise_performance: {
+        Row: {
+          average_estimated_1rm_kg: number | null
+          average_reps: number | null
+          average_rir: number | null
+          average_weight_kg: number | null
+          best_estimated_1rm_kg: number | null
+          best_weight_kg: number | null
+          completed_sets: number | null
+          exercise_key: string | null
+          exercise_name: string | null
+          first_logged_at: string | null
+          gym_id: string | null
+          gym_name: string | null
+          last_logged_at: string | null
+          sessions: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workout_sessions_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gyms"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       personal_bests: {
         Row: {
@@ -1329,6 +1405,7 @@ export type Database = {
           completed_at: string | null
           created_at: string
           duration_seconds: number | null
+          gym_id: string | null
           id: string
           name: string
           notes: string | null
@@ -1649,6 +1726,7 @@ export type Database = {
           completed_at: string | null
           created_at: string
           duration_seconds: number | null
+          gym_id: string | null
           id: string
           name: string
           notes: string | null

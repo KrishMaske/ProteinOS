@@ -7,6 +7,7 @@ import { HeaderNavigationButton } from '@/components/header-navigation-button';
 import { AppText, Button, Card, ErrorState, Field, LoadingState, ProgressBar, Screen } from '@/components/ui';
 import { radius, spacing } from '@/constants/tokens';
 import { ExerciseMedia } from '@/features/exercises/components/exercise-media';
+import { useGyms, useSetSessionGym } from '@/features/gyms/hooks/use-gyms';
 import { WorkoutSetEditor } from '@/features/workouts/components/workout-set-editor';
 import type { PreviousPerformance, WorkoutSet } from '@/features/workouts/api/workouts';
 import { useAddSet, useCompleteWorkout, useDiscardWorkout, useRemoveSet, useSkipExercise, useSkipSet, useUpdateSet, useUpdateWorkoutExercise, useWorkout } from '@/features/workouts/hooks/use-workout';
@@ -18,6 +19,53 @@ import { kgToLb } from '@/lib/units';
 import { useActiveWorkoutStore } from '@/store/active-workout-store';
 
 type WorkoutView = 'focus' | 'overview';
+
+/**
+ * The default gym is stamped at start, so this only has to make correcting it cheap for
+ * the sessions that happen somewhere else. Shown only once more than one gym exists,
+ * since a single-gym user has nothing to choose between.
+ */
+function GymPicker({ sessionId, gymId }: { sessionId: string; gymId: string | null }) {
+  const { colors } = useAppTheme();
+  const gyms = useGyms();
+  const setGym = useSetSessionGym(sessionId);
+  const [open, setOpen] = useState(false);
+  const all = gyms.data ?? [];
+  if (all.length < 2) return null;
+  const current = all.find((gym) => gym.id === gymId);
+
+  return (
+    <View style={styles.gymWrap}>
+      <Pressable
+        accessibilityLabel={`Training at ${current?.name ?? 'an unrecorded gym'}. Change`}
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((value) => !value)}
+        style={({ pressed }) => [styles.gymRow, { backgroundColor: colors.raised, opacity: pressed ? 0.7 : 1 }]}>
+        <Ionicons name="location-outline" size={17} color={colors.primary} />
+        <AppText variant="caption" style={styles.flex} numberOfLines={1}>{current?.name ?? 'Gym not set'}</AppText>
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
+      </Pressable>
+      {open ? (
+        <View style={styles.gymOptions}>
+          {all.map((gym) => (
+            <Pressable
+              key={gym.id}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: gym.id === gymId }}
+              disabled={setGym.isPending}
+              onPress={() => {
+                setOpen(false);
+                setGym.mutate({ sessionId, gymId: gym.id });
+              }}
+              style={({ pressed }) => [styles.gymOption, { backgroundColor: gym.id === gymId ? colors.primary : colors.surface, opacity: pressed ? 0.7 : 1 }]}>
+              <AppText variant="caption" color={gym.id === gymId ? colors.onPrimary : colors.text} numberOfLines={1}>{gym.name}</AppText>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 export default function ActiveWorkoutScreen() {
   const params = useLocalSearchParams<{ id: string }>();
@@ -232,6 +280,8 @@ export default function ActiveWorkoutScreen() {
           <AppText variant="caption" color={colors.muted}>{completedSets} of {allSets.length} sets complete{skippedSets ? ` · ${skippedSets} skipped` : ''}</AppText>
           <AppText variant="caption" color={colors.muted}>{Math.round(imperial ? kgToLb(volume) : volume)} {imperial ? 'lb' : 'kg'} volume</AppText>
         </View>
+        <GymPicker sessionId={id} gymId={workout.gym_id} />
+
         <ProgressBar label={`${completedSets} of ${allSets.length} workout sets complete`} value={allSets.length ? (completedSets + skippedSets) / allSets.length * 100 : 0} />
 
         {view === 'overview' ? (
@@ -481,6 +531,10 @@ const styles = StyleSheet.create({
   topBar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   topBarCopy: { flex: 1, minWidth: 0, alignItems: 'center' },
   workoutName: { fontWeight: '800', maxWidth: '100%' },
+  gymWrap: { minWidth: 0, gap: spacing.sm },
+  gymRow: { minWidth: 0, minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, paddingHorizontal: spacing.md },
+  gymOptions: { minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  gymOption: { minHeight: 38, borderRadius: radius.pill, paddingHorizontal: spacing.md, alignItems: 'center', justifyContent: 'center' },
   progressHeader: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: spacing.sm },
   footer: { gap: spacing.sm, width: '100%', maxWidth: 720, alignSelf: 'center' },
   restBar: { minHeight: 64, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },

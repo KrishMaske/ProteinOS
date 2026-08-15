@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { Link, router, type Href } from 'expo-router';
 import { useState, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
@@ -344,6 +344,15 @@ export default function SettingsScreen() {
             value={deletingPhotos}
           />
         </View>
+      </SettingsSection>
+
+      <SettingsSection title="Training">
+        <Link href={'/gyms' as Href} asChild>
+          <Pressable accessibilityLabel="Manage gyms" style={({ pressed }) => [styles.selectorRow, { opacity: pressed ? 0.6 : 1 }]}>
+            <AppText style={styles.flex}>Gyms</AppText>
+            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+          </Pressable>
+        </Link>
       </SettingsSection>
 
       <SettingsSection title="Security">
