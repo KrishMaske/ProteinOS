@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState, type ComponentProps, type PropsWithChildren, type ReactNode } from 'react';
+import { useEffect, useState, type ComponentProps, type PropsWithChildren, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,7 +16,7 @@ import {
   type PressableProps,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets, type Edge } from 'react-native-safe-area-context';
 
 import { radius, spacing } from '@/constants/tokens';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -30,7 +31,29 @@ type ScreenProps = PropsWithChildren<{
 export function Screen({ children, contentContainerStyle, footer, safeEdges = ['left', 'right', 'bottom'], scroll = true }: ScreenProps) {
   const { colors } = useAppTheme();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const compact = width < 380;
+
+  // KeyboardAvoidingView sizes its padding from the gap between its own frame bottom and
+  // the top of the keyboard. Nested inside a SafeAreaView that pads the bottom, its frame
+  // stops short of the screen by the home-indicator inset and it under-pads by exactly
+  // that much, leaving the footer input under the keyboard. So the view is allowed to
+  // reach the real screen bottom and the footer carries the inset itself - dropped while
+  // the keyboard is up, where there is no home indicator to clear.
+  const ownsBottomInset = Boolean(footer) && safeEdges.includes('bottom');
+  const edges = ownsBottomInset ? safeEdges.filter((edge) => edge !== 'bottom') : safeEdges;
+
+  useEffect(() => {
+    if (!ownsBottomInset) return;
+    const ios = Platform.OS === 'ios';
+    const show = Keyboard.addListener(ios ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboardOpen(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [ownsBottomInset]);
   const content = <View style={[styles.screenContent, compact && styles.compactScreenContent, contentContainerStyle]}>{children}</View>;
   const scrollContent = scroll ? (
     <ScrollView
@@ -44,11 +67,11 @@ export function Screen({ children, contentContainerStyle, footer, safeEdges = ['
   ) : content;
 
   return (
-    <SafeAreaView edges={safeEdges} style={[styles.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={edges} style={[styles.safe, { backgroundColor: colors.background }]}>
       {footer || !scroll ? (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.safe}>
           {scrollContent}
-          {footer ? <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.line }]}><View style={[styles.footerInner, compact && styles.compactFooterInner]}>{footer}</View></View> : null}
+          {footer ? <View style={[styles.footer, { backgroundColor: colors.background, borderTopColor: colors.line }, ownsBottomInset && !keyboardOpen && { paddingBottom: insets.bottom }]}><View style={[styles.footerInner, compact && styles.compactFooterInner]}>{footer}</View></View> : null}
         </KeyboardAvoidingView>
       ) : scrollContent}
     </SafeAreaView>
