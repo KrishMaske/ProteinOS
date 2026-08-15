@@ -58,9 +58,12 @@ export default function OnboardingScreen() {
     resolver: zodResolver(onboardingSchema),
     defaultValues: {
       displayName: '',
-      age: 30,
-      height: 175,
-      weight: 75,
+      // Left blank on purpose. A pre-filled age becomes a stored birth date, and a
+      // pre-filled height and weight drive BMI, body fat, and every calorie target, so a
+      // default the user never looked at would silently masquerade as their own data.
+      age: Number.NaN,
+      height: Number.NaN,
+      weight: Number.NaN,
       preferredUnits: 'metric',
       biologicalSex: 'unspecified',
       goalType: 'recomp',

@@ -1,5 +1,6 @@
-import { Link } from 'expo-router';
-import { useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { Link, useLocalSearchParams } from 'expo-router';
+import { useState, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, EmptyState, ErrorState, Field, LoadingState, Screen, SectionHeader } from '@/components/ui';
@@ -15,6 +16,7 @@ import {
   healthyBodyFatRange,
   healthyWeightRangeKg,
   positionInRange,
+  unitFormatter,
   verdictForRange,
   HEALTHY_BMI,
   type RangeVerdict,
@@ -39,7 +41,11 @@ export default function ProgressScreen() {
   const { colors } = useAppTheme();
   const query = useProgressDashboard();
   const [range, setRange] = useState<Range>('3M');
-  const [segment, setSegment] = useState<Segment>('body');
+  // Today links straight to a segment, so honour that on first render.
+  const { segment: requested } = useLocalSearchParams<{ segment?: string }>();
+  const [segment, setSegment] = useState<Segment>(
+    () => segments.some((item) => item.key === requested) ? (requested as Segment) : 'body',
+  );
   const [showAllMetrics, setShowAllMetrics] = useState(false);
   if (query.isLoading) return <Screen safeEdges={['top', 'left', 'right']}><LoadingState /></Screen>;
   if (query.isError) return <Screen safeEdges={['top', 'left', 'right']}><ErrorState message={query.error.message} onRetry={() => query.refetch()} /></Screen>;
@@ -170,6 +176,42 @@ function RangeGauge({ value, min, max, axisMin, axisMax, unit }: {
   );
 }
 
+/** Headline figure always visible; the explanation and formula sit behind a tap. */
+function MetricCard({ title, value, valueColor, caption, details, children }: PropsWithChildren<{
+  title: string;
+  value: string;
+  valueColor: string;
+  caption: string;
+  details: (string | null)[];
+}>) {
+  const { colors } = useAppTheme();
+  const [open, setOpen] = useState(false);
+  const shown = details.filter((line): line is string => Boolean(line));
+
+  return (
+    <Card>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${title} ${value}. ${open ? 'Hide' : 'Show'} details`}
+        onPress={() => setOpen((current) => !current)}
+        style={({ pressed }) => [styles.compositionHeading, { opacity: pressed ? 0.7 : 1 }]}
+      >
+        <AppText variant="heading">{title}</AppText>
+        <View style={styles.metricValue}>
+          <AppText variant="heading" color={valueColor}>{value}</AppText>
+          <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
+        </View>
+      </Pressable>
+      {children}
+      <AppText variant="caption" color={colors.muted}>{caption}</AppText>
+      {open ? shown.map((line) => (
+        <AppText key={line} variant="caption" color={colors.muted} style={styles.formula}>{line}</AppText>
+      )) : null}
+    </Card>
+  );
+}
+
 function CompositionSegment({ composition, profile, bodyFatSeries, goalBand, imperial }: {
   composition: ReturnType<typeof summarizeComposition>;
   profile: { heightCm: number | null; age: number | null; biologicalSex: BiologicalSex | null | undefined };
@@ -191,7 +233,8 @@ function CompositionSegment({ composition, profile, bodyFatSeries, goalBand, imp
   const { current } = composition;
   const healthyWeight = healthyWeightRangeKg(profile.heightCm);
   const healthyFat = healthyBodyFatRange(profile.age, profile.biologicalSex);
-  const mass = (kg: number) => `${Math.round(imperial ? kgToLb(kg) : kg)} ${imperial ? 'lb' : 'kg'}`;
+  const units = unitFormatter(imperial);
+  const mass = (kg: number) => units.mass(kg);
   const fatInputs = {
     weightKg: current.weightKg ?? 0,
     heightCm: profile.heightCm,
@@ -206,51 +249,60 @@ function CompositionSegment({ composition, profile, bodyFatSeries, goalBand, imp
   return (
     <>
       <AppText variant="caption" color={colors.muted}>
-        Week of {new Date(`${current.weekStart}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · averaged from {current.readings} {current.readings === 1 ? 'log' : 'logs'}
+        {current.readings === 1 ? 'From 1 log' : `Averaged from ${current.readings} logs`} this week
       </AppText>
 
       {current.bmi !== null ? (
-        <Card>
-          <View style={styles.compositionHeading}>
-            <AppText variant="heading">BMI</AppText>
-            <AppText variant="heading" color={bmiCategory(current.bmi) === 'healthy' ? colors.primary : colors.danger}>{current.bmi.toFixed(1)}</AppText>
-          </View>
+        <MetricCard
+          title="BMI"
+          value={current.bmi.toFixed(1)}
+          valueColor={bmiCategory(current.bmi) === 'healthy' ? colors.primary : colors.danger}
+          caption={bmiLabels[bmiCategory(current.bmi)]}
+          details={[
+            healthyWeight ? `Healthy weight for your height: ${mass(healthyWeight.minKg)}–${mass(healthyWeight.maxKg)}` : null,
+            current.weightKg !== null ? explainBmi(current.weightKg, profile.heightCm, units) : null,
+            'Weight relative to height. It does not know muscle from fat, so a lean, heavily built person can read high.',
+          ]}
+        >
           <RangeGauge value={current.bmi} min={HEALTHY_BMI.min} max={HEALTHY_BMI.max} axisMin={15} axisMax={35} />
-          <AppText variant="caption" color={colors.muted}>{bmiLabels[bmiCategory(current.bmi)]}</AppText>
-          {healthyWeight ? <AppText variant="caption" color={colors.muted}>Healthy weight for your height: {mass(healthyWeight.minKg)}–{mass(healthyWeight.maxKg)}</AppText> : null}
-          {current.weightKg !== null ? <AppText variant="caption" color={colors.muted} style={styles.formula}>{explainBmi(current.weightKg, profile.heightCm)}</AppText> : null}
-        </Card>
+        </MetricCard>
       ) : null}
 
       {current.fat ? (
-        <Card>
-          <View style={styles.compositionHeading}>
-            <AppText variant="heading">Body fat</AppText>
-            <AppText variant="heading" color={healthyFat && fatVerdict !== 'within' ? colors.danger : colors.primary}>{current.fat.percent.toFixed(1)}%</AppText>
-          </View>
-          {healthyFat ? (
-            <>
-              <RangeGauge value={current.fat.percent} min={healthyFat.min} max={healthyFat.max} axisMin={3} axisMax={45} unit="%" />
-              <AppText variant="caption" color={colors.muted}>{verdictCopy[fatVerdict!]} for age {profile.age}</AppText>
-            </>
-          ) : (
-            // The healthy band shifts by up to 6 points across age groups, so without a
-            // birth date there is no honest range to draw.
-            <AppText variant="caption" color={colors.muted}>Add your birth date in settings to see the healthy range for your age.</AppText>
-          )}
-          <AppText variant="caption" color={colors.muted} style={styles.formula}>{explainBodyFat(current.fat, fatInputs)}</AppText>
-        </Card>
+        <MetricCard
+          title="Body fat"
+          value={`${current.fat.percent.toFixed(1)}%`}
+          valueColor={healthyFat && fatVerdict !== 'within' ? colors.danger : colors.primary}
+          caption={healthyFat
+            ? `${verdictCopy[fatVerdict!]} for age ${profile.age}`
+            : 'Add your age in settings to see the healthy range'}
+          details={[
+            explainBodyFat(current.fat, fatInputs, units),
+            healthyFat
+              ? `Healthy for age ${profile.age}: ${healthyFat.min}–${healthyFat.max}%. These bands rise with age, so the same number reads differently at 25 and 55.`
+              // The band shifts by up to 6 points across age groups, so without an age there
+              // is no honest range to draw.
+              : 'The healthy band depends on your age and shifts by up to 6 points across age groups.',
+            current.fat.standardErrorPoints === null
+              ? null
+              : `A tape-based estimate lands within about ${current.fat.standardErrorPoints} points of a DXA scan.`,
+          ]}
+        >
+          {healthyFat ? <RangeGauge value={current.fat.percent} min={healthyFat.min} max={healthyFat.max} axisMin={3} axisMax={45} unit="%" /> : null}
+        </MetricCard>
       ) : null}
 
       {current.fat?.leanMassKg !== null && current.fat?.leanMassKg !== undefined ? (
-        <Card>
-          <View style={styles.compositionHeading}>
-            <AppText variant="heading">Lean mass</AppText>
-            <AppText variant="heading" color={colors.primary}>{mass(current.fat.leanMassKg)}</AppText>
-          </View>
-          <AppText variant="caption" color={colors.muted}>{mass(current.fat.fatMassKg!)} fat · everything else is muscle, bone, organs and water</AppText>
-          <AppText variant="caption" color={colors.muted} style={styles.formula}>{explainLeanMass(current.weightKg!, current.fat.percent)}</AppText>
-        </Card>
+        <MetricCard
+          title="Lean mass"
+          value={mass(current.fat.leanMassKg)}
+          valueColor={colors.primary}
+          caption={`${mass(current.fat.fatMassKg!)} fat`}
+          details={[
+            explainLeanMass(current.weightKg!, current.fat.percent, units),
+            'Everything that is not fat: muscle, bone, organs and water. Holding this steady while weight falls is the goal of a cut.',
+          ]}
+        />
       ) : null}
 
       <Card>
@@ -390,6 +442,7 @@ const styles = StyleSheet.create({
   gaugeLabels: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   goalValue: { fontSize: 32, lineHeight: 36 },
   formula: { fontVariant: ['tabular-nums'] },
+  metricValue: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   modeRow: { flexDirection: 'row', gap: spacing.xs },
   modeOption: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
   presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

@@ -211,7 +211,7 @@ describe('healthyWeightRangeKg', () => {
 
 describe('healthyBodyFatRange', () => {
   it('uses the Gallagher bands for men', () => {
-    expect(healthyBodyFatRange(30, 'male')).toMatchObject({ min: 8, max: 19 });
+    expect(healthyBodyFatRange(30, 'male')).toMatchObject({ min: 8, max: 20 });
     expect(healthyBodyFatRange(45, 'male')).toMatchObject({ min: 11, max: 22 });
     expect(healthyBodyFatRange(65, 'male')).toMatchObject({ min: 13, max: 25 });
     expect(healthyBodyFatRange(30, 'female')).toMatchObject({ min: 21, max: 33 });

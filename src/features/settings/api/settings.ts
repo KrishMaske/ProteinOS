@@ -92,18 +92,40 @@ export type BodyMeasurements = {
   heightCm: number | null;
   targetWeightKg: number | null;
   weightKg: number | null;
+  /** Whole years. Null leaves the stored birth date alone. */
+  age?: number | null;
 };
+
+/**
+ * Only an age is collected, so the stored birth date keeps the existing month and day and
+ * moves the year. That way a correction does not silently reset the anniversary, and the
+ * age still ticks over on the right date.
+ */
+export function birthDateForAge(age: number, existing: string | null, today = new Date()) {
+  const anchor = existing ? new Date(`${existing}T00:00:00`) : today;
+  const month = anchor.getMonth();
+  const day = anchor.getDate();
+  const hadBirthdayThisYear =
+    today.getMonth() > month || (today.getMonth() === month && today.getDate() >= day);
+  const year = today.getFullYear() - age - (hadBirthdayThisYear ? 0 : 1);
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
 
 /**
  * Height and goal weight live on the profile; a new current weight becomes a body_metrics
  * reading so the progress chart and target recalculation both see it.
  */
-export async function updateBodyMeasurements({ heightCm, targetWeightKg, weightKg }: BodyMeasurements) {
+export async function updateBodyMeasurements({ heightCm, targetWeightKg, weightKg, age }: BodyMeasurements) {
   const { data: user } = await supabase.auth.getUser();
   if (!user.user) throw new Error('Authentication expired');
+  let birthDate: string | undefined;
+  if (age !== null && age !== undefined) {
+    const { data: current } = await supabase.from('profiles').select('birth_date').eq('id', user.user.id).single();
+    birthDate = birthDateForAge(age, current?.birth_date ?? null);
+  }
   const { error } = await supabase
     .from('profiles')
-    .update({ height_cm: heightCm, target_weight_kg: targetWeightKg })
+    .update({ height_cm: heightCm, target_weight_kg: targetWeightKg, ...(birthDate ? { birth_date: birthDate } : {}) })
     .eq('id', user.user.id);
   if (error) throw error;
   if (weightKg === null) return;

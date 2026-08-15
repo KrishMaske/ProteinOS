@@ -78,8 +78,10 @@ export const HEALTHY_BMI = { min: 18.5, max: 24.9 } as const;
  * at a constant health risk, so a single band across all ages would mislabel older adults.
  */
 const HEALTHY_BODY_FAT: Record<BiologicalSex, { maxAge: number; min: number; max: number }[]> = {
+  // Transcribed from Table 4 of the paper (4-compartment estimates, African Americans and
+  // whites): the body fat predicted at BMI 18.5 and at BMI 25 for each age band.
   male: [
-    { maxAge: 39, min: 8, max: 19 },
+    { maxAge: 39, min: 8, max: 20 },
     { maxAge: 59, min: 11, max: 22 },
     { maxAge: Infinity, min: 13, max: 25 },
   ],
@@ -91,7 +93,7 @@ const HEALTHY_BODY_FAT: Record<BiologicalSex, { maxAge: number; min: number; max
   // Midpoints of the two published sets, consistent with how BMR and RFM treat an
   // unstated sex.
   unspecified: [
-    { maxAge: 39, min: 14.5, max: 26 },
+    { maxAge: 39, min: 14.5, max: 26.5 },
     { maxAge: 59, min: 17, max: 28 },
     { maxAge: Infinity, min: 18.5, max: 30.5 },
   ],
@@ -215,23 +217,43 @@ export function positionInRange(value: number, min: number, max: number) {
  * Human-readable derivations so a number on screen can be checked by hand rather than
  * taken on trust. Values are rounded the same way the displayed figures are.
  */
-export function explainBmi(weightKg: number, heightCm: number) {
-  const heightM = heightCm / 100;
-  return `${weightKg} kg ÷ (${heightM.toFixed(2)} m)² = ${bodyMassIndex(weightKg, heightCm)}`;
+/** Formats a value in the user's own units so the shown sum matches the shown figures. */
+export type UnitFormatter = {
+  mass: (kg: number) => string;
+  length: (cm: number) => string;
+  /** BMI is always kg/m²; imperial needs the 703 factor to work in lb and inches. */
+  bmi: (weightKg: number, heightCm: number) => string;
+};
+
+export function unitFormatter(imperial: boolean): UnitFormatter {
+  const round1 = (value: number) => Math.round(value * 10) / 10;
+  return {
+    mass: (kg) => imperial ? `${round1(kg * 2.20462262)} lb` : `${round1(kg)} kg`,
+    length: (cm) => imperial ? `${round1(cm / 2.54)} in` : `${round1(cm)} cm`,
+    bmi: (weightKg, heightCm) => {
+      if (!imperial) return `${round1(weightKg)} kg ÷ (${(heightCm / 100).toFixed(2)} m)²`;
+      return `703 × ${round1(weightKg * 2.20462262)} lb ÷ (${round1(heightCm / 2.54)} in)²`;
+    },
+  };
 }
 
-export function explainBodyFat(estimate: BodyFatEstimate, inputs: BodyCompositionInputs) {
+export function explainBmi(weightKg: number, heightCm: number, units: UnitFormatter) {
+  return `${units.bmi(weightKg, heightCm)} = ${bodyMassIndex(weightKg, heightCm)}`;
+}
+
+export function explainBodyFat(estimate: BodyFatEstimate, inputs: BodyCompositionInputs, units: UnitFormatter) {
   const sex = inputs.biologicalSex ?? 'unspecified';
   if (estimate.method === 'measured') return 'Taken from the body fat you logged.';
   if (estimate.method === 'rfm') {
-    return `RFM: ${RFM_INTERCEPT[sex]} − 20 × (${inputs.heightCm} cm height ÷ ${inputs.waistCm} cm waist) = ${estimate.percent}%`;
+    // The height-to-waist ratio cancels units, so either system gives the same answer.
+    return `${RFM_INTERCEPT[sex]} − 20 × (${units.length(inputs.heightCm)} height ÷ ${units.length(inputs.waistCm!)} waist) = ${estimate.percent}%`;
   }
   const bmi = bodyMassIndex(inputs.weightKg, inputs.heightCm);
-  return `Deurenberg: 1.20 × ${bmi} BMI + 0.23 × ${inputs.age} yrs − 10.8 × ${DEURENBERG_SEX[sex]} − 5.4 = ${estimate.percent}%`;
+  return `1.20 × ${bmi} BMI + 0.23 × ${inputs.age} yrs − 10.8 × ${DEURENBERG_SEX[sex]} − 5.4 = ${estimate.percent}%`;
 }
 
-export function explainLeanMass(weightKg: number, percent: number) {
-  return `${weightKg} kg × (100 − ${percent})% = ${Math.round(weightKg * (1 - percent / 100) * 10) / 10} kg lean`;
+export function explainLeanMass(weightKg: number, percent: number, units: UnitFormatter) {
+  return `${units.mass(weightKg)} × (100 − ${percent})% = ${units.mass(weightKg * (1 - percent / 100))} lean`;
 }
 
 export type RangeVerdict = 'below' | 'within' | 'above';

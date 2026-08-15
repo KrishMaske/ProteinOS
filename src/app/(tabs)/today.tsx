@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Keyboard, Pressable, StyleSheet, View } from 'react-native';
 
 import { HeaderNavigationButton } from '@/components/header-navigation-button';
-import { AppText, Button, Card, ErrorState, Field, LoadingState, ProgressBar, Screen, SectionHeader } from '@/components/ui';
+import { AppText, Button, Card, ErrorState, Field, LoadingState, ProgressBar, Screen } from '@/components/ui';
 import { radius, spacing } from '@/constants/tokens';
 import { ExerciseMedia } from '@/features/exercises/components/exercise-media';
 import { pickAndUploadFoodPhoto } from '@/features/nutrition/api/food-photo';
@@ -181,7 +181,7 @@ export default function TodayScreen() {
       </Card>
 
       <Card>
-        <SectionHeader title="Nutrition" action={<Link href="/(tabs)/nutrition" style={{ color: colors.primary }}>Open</Link>} />
+        <CardTitleLink title="Nutrition" href="/(tabs)/nutrition" />
         <NutritionProgress label="Calories" value={totals?.calories ?? 0} target={target?.calories ?? 0} unit="kcal" />
         <NutritionProgress label="Protein" value={totals?.protein_grams ?? 0} target={target?.protein_grams ?? 0} unit="g" />
         <AppText variant="caption" color={colors.muted}>{Math.round(totals?.carbohydrate_grams ?? 0)}g carbs · {Math.round(totals?.fat_grams ?? 0)}g fat</AppText>
@@ -270,22 +270,36 @@ function DeltaNote({ change, unit }: { change: number | null; unit: string }) {
   );
 }
 
+/**
+ * One shared card title so every card on Today reads the same. The title itself is the
+ * link, rather than a separate word beside it.
+ */
+function CardTitleLink({ title, href, subtitle }: { title: string; href: Parameters<typeof Link>[0]['href']; subtitle?: string }) {
+  const { colors } = useAppTheme();
+  return (
+    <Link href={href} asChild>
+      <Pressable accessibilityRole="link" accessibilityLabel={`Open ${title}`} style={({ pressed }) => [styles.cardTitleRow, { opacity: pressed ? 0.6 : 1 }]}>
+        <View style={styles.flex}>
+          <AppText variant="heading">{title}</AppText>
+          {subtitle ? <AppText variant="caption" color={colors.muted}>{subtitle}</AppText> : null}
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+      </Pressable>
+    </Link>
+  );
+}
+
 function CompositionCard({ summary, imperial }: { summary: CompositionSummary; imperial: boolean }) {
   const { colors } = useAppTheme();
   const { current, bmiChange, bodyFatChange } = summary;
-  const weekLabel = new Date(`${current.weekStart}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
   return (
     <Card>
-      <View style={styles.workoutHeading}>
-        <View style={styles.flex}>
-          <AppText variant="eyebrow" color={colors.primary}>Body composition</AppText>
-          <AppText variant="caption" color={colors.muted}>
-            Week of {weekLabel} · {current.readings} log{current.readings === 1 ? '' : 's'} averaged
-          </AppText>
-        </View>
-        <Link href="/(tabs)/progress" style={{ color: colors.primary }}>Trends</Link>
-      </View>
+      <CardTitleLink
+        title="Composition"
+        href={{ pathname: '/(tabs)/progress', params: { segment: 'composition' } }}
+        subtitle={current.readings === 1 ? 'From 1 log this week' : `Averaged from ${current.readings} logs this week`}
+      />
       <View style={styles.compositionRow}>
         {current.bmi !== null ? (
           <View style={[styles.compositionStat, { backgroundColor: colors.raised }]}>
@@ -349,5 +363,6 @@ const styles = StyleSheet.create({
   compositionStat: { minWidth: 96, flexGrow: 1, flexBasis: 96, borderRadius: radius.md, padding: spacing.md, gap: 2 },
   secondaryActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   secondaryButton: { flexGrow: 1, flexBasis: 150, minWidth: 0 },
+  cardTitleRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 32 },
   flex: { flex: 1, minWidth: 0 },
 });

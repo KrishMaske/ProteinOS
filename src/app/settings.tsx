@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Switch, View } from 'react-native';
 import { AppText, Button, ErrorState, Field, LoadingState, Screen } from '@/components/ui';
 import { radius, spacing } from '@/constants/tokens';
 import { estimateTargetsFromSettings } from '@/features/settings/api/settings';
+import { ageFromBirthDate } from '@/features/nutrition/services/nutrition-targets';
 import { useRecalculateNutritionTargets, useSettings, useUpdateBodyMeasurements, useUpdateFitnessGoal, useUpdateSettings } from '@/features/settings/hooks/use-settings';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { supabase } from '@/lib/supabase/client';
@@ -195,6 +196,7 @@ export default function SettingsScreen() {
 
       <SettingsSection title="Body">
         <BodyMeasurements
+          birthDate={profile.birth_date}
           key={`${profile.height_cm}-${profile.target_weight_kg}-${latestWeight?.measured_at ?? 'none'}`}
           heightCm={profile.height_cm === null ? null : Number(profile.height_cm)}
           imperial={profile.preferred_units === 'imperial'}
@@ -365,7 +367,8 @@ function Choice({ active, disabled, fill = false, label, onPress }: { active: bo
   );
 }
 
-function BodyMeasurements({ heightCm, imperial, targetWeightKg, weightKg }: {
+function BodyMeasurements({ birthDate, heightCm, imperial, targetWeightKg, weightKg }: {
+  birthDate: string | null;
   heightCm: number | null;
   imperial: boolean;
   targetWeightKg: number | null;
@@ -375,18 +378,29 @@ function BodyMeasurements({ heightCm, imperial, targetWeightKg, weightKg }: {
   const save = useUpdateBodyMeasurements();
   const toDisplayHeight = (value: number | null) => value === null ? '' : trimNumber(imperial ? cmToIn(value) : value);
   const toDisplayWeight = (value: number | null) => value === null ? '' : trimNumber(imperial ? kgToLb(value) : value);
+  const toDisplayAge = (value: string | null) => value === null ? '' : String(ageFromBirthDate(value));
   const [height, setHeight] = useState(() => toDisplayHeight(heightCm));
   const [weight, setWeight] = useState(() => toDisplayWeight(weightKg));
   const [goalWeight, setGoalWeight] = useState(() => toDisplayWeight(targetWeightKg));
+  const [age, setAge] = useState(() => toDisplayAge(birthDate));
   const [validationError, setValidationError] = useState<string | null>(null);
   const weightChanged = weight !== toDisplayWeight(weightKg);
-  const dirty = weightChanged || height !== toDisplayHeight(heightCm) || goalWeight !== toDisplayWeight(targetWeightKg);
+  const ageChanged = age !== toDisplayAge(birthDate);
+  const dirty = weightChanged || ageChanged || height !== toDisplayHeight(heightCm) || goalWeight !== toDisplayWeight(targetWeightKg);
 
   function parse(value: string, label: string, convert: (input: number) => number) {
     if (!value.trim()) return null;
     const parsed = Number(value.replace(',', '.'));
     if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${label} must be greater than zero.`);
     return convert(parsed);
+  }
+
+  function parsedAge() {
+    if (!ageChanged) return null;
+    if (!age.trim()) throw new Error('Age cannot be blank.');
+    const parsed = Number(age);
+    if (!Number.isInteger(parsed) || parsed < 13 || parsed > 120) throw new Error('Enter an age between 13 and 120.');
+    return parsed;
   }
 
   async function submit() {
@@ -397,6 +411,7 @@ function BodyMeasurements({ heightCm, imperial, targetWeightKg, weightKg }: {
         targetWeightKg: parse(goalWeight, 'Goal weight', (value) => imperial ? lbToKg(value) : value),
         // Only log a new reading when the number actually moved, so opening settings does not add rows.
         weightKg: weightChanged ? parse(weight, 'Weight', (value) => imperial ? lbToKg(value) : value) : null,
+        age: parsedAge(),
       });
     } catch (caught) {
       if (caught instanceof Error && !('code' in caught)) setValidationError(caught.message);
@@ -406,6 +421,7 @@ function BodyMeasurements({ heightCm, imperial, targetWeightKg, weightKg }: {
   return (
     <>
       <View style={styles.measurementFields}>
+        <Field containerStyle={styles.measurementField} label="Age" value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="—" />
         <Field containerStyle={styles.measurementField} label={imperial ? 'Height (in)' : 'Height (cm)'} value={height} onChangeText={setHeight} keyboardType="decimal-pad" placeholder="—" />
         <Field containerStyle={styles.measurementField} label={imperial ? 'Weight (lb)' : 'Weight (kg)'} value={weight} onChangeText={setWeight} keyboardType="decimal-pad" placeholder="—" />
         <Field containerStyle={styles.measurementField} label={imperial ? 'Goal weight (lb)' : 'Goal weight (kg)'} value={goalWeight} onChangeText={setGoalWeight} keyboardType="decimal-pad" placeholder="Optional" />

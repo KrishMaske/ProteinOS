@@ -2,9 +2,9 @@ import { z } from 'zod';
 
 export const onboardingSchema = z.object({
   displayName: z.string().trim().min(1, 'Tell us what to call you').max(80),
-  age: z.number().int().min(13).max(120),
-  height: z.number().positive().max(300),
-  weight: z.number().positive().max(700),
+  age: z.number({ error: 'Enter your age' }).int('Enter your age in whole years').min(13, 'Age must be at least 13').max(120, 'Enter a real age'),
+  height: z.number({ error: 'Enter your height' }).positive('Enter your height').max(300, 'Enter a real height'),
+  weight: z.number({ error: 'Enter your weight' }).positive('Enter your weight').max(700, 'Enter a real weight'),
   preferredUnits: z.enum(['metric', 'imperial']),
   biologicalSex: z.enum(['male', 'female', 'unspecified']),
   goalType: z.enum(['recomp', 'fat_loss', 'muscle_gain', 'maintenance', 'strength']),
