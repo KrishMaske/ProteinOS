@@ -3,43 +3,16 @@ import * as ImagePicker from 'expo-image-picker';
 
 import { supabase } from '@/lib/supabase/client';
 import { uuid } from '@/lib/uuid';
+import { perServing, recipeTotals, type RecipeMacros } from '@/features/nutrition/services/recipe-macros';
 import type { Database, Tables, TablesInsert } from '@/types/database';
+
+export { perServing, recipeTotals };
+export type RecipeTotals = RecipeMacros;
 
 export type Recipe = Tables<'recipes'>;
 export type RecipeIngredient = Tables<'recipe_ingredients'>;
 export type RecipeWithIngredients = Recipe & { recipe_ingredients: RecipeIngredient[] };
-export type RecipeTotals = {
-  calories: number;
-  proteinGrams: number;
-  carbohydrateGrams: number;
-  fatGrams: number;
-  fiberGrams: number;
-};
 
-/**
- * Totals are summed from ingredients rather than stored, so they can never disagree with
- * the ingredient list. Per-serving figures divide by the recipe's yield.
- */
-export function recipeTotals(ingredients: RecipeIngredient[]): RecipeTotals {
-  return ingredients.reduce<RecipeTotals>((sum, item) => ({
-    calories: sum.calories + Number(item.calories ?? 0),
-    proteinGrams: sum.proteinGrams + Number(item.protein_grams ?? 0),
-    carbohydrateGrams: sum.carbohydrateGrams + Number(item.carbohydrate_grams ?? 0),
-    fatGrams: sum.fatGrams + Number(item.fat_grams ?? 0),
-    fiberGrams: sum.fiberGrams + Number(item.fiber_grams ?? 0),
-  }), { calories: 0, proteinGrams: 0, carbohydrateGrams: 0, fatGrams: 0, fiberGrams: 0 });
-}
-
-export function perServing(totals: RecipeTotals, servings: number): RecipeTotals {
-  const divisor = servings > 0 ? servings : 1;
-  return {
-    calories: totals.calories / divisor,
-    proteinGrams: totals.proteinGrams / divisor,
-    carbohydrateGrams: totals.carbohydrateGrams / divisor,
-    fatGrams: totals.fatGrams / divisor,
-    fiberGrams: totals.fiberGrams / divisor,
-  };
-}
 
 export async function getRecipes() {
   const { data, error } = await supabase
