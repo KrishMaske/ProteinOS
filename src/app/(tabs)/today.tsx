@@ -95,7 +95,7 @@ export default function TodayScreen() {
           <AppText variant="title">{greeting}</AppText>
         </View>
         <View style={styles.headerActions}>
-          <Link href="/(tabs)/coach" asChild><Pressable accessibilityLabel="Ask Coach" style={[styles.iconButton, { backgroundColor: colors.raised }]}><Ionicons name="sparkles-outline" size={22} color={colors.text} /></Pressable></Link>
+          <Link href="/coach" asChild><Pressable accessibilityLabel="Ask Coach" style={[styles.iconButton, { backgroundColor: colors.raised }]}><Ionicons name="sparkles-outline" size={22} color={colors.text} /></Pressable></Link>
           <Link href="/settings" asChild><Pressable accessibilityLabel="Open settings" style={[styles.iconButton, { backgroundColor: colors.raised }]}><Ionicons name="person-outline" size={22} color={colors.text} /></Pressable></Link>
         </View>
       </View>

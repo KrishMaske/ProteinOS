@@ -1,7 +1,11 @@
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
+
 import { z } from 'zod';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 
 import { supabase } from '@/lib/supabase/client';
+import { uuid } from '@/lib/uuid';
 
 const goalTypeSchema = z.enum(['recomp', 'fat_loss', 'muscle_gain', 'maintenance', 'strength']);
 
@@ -46,16 +50,63 @@ export async function getCoachConversation(conversationId: string) {
   if (!conversation) throw new Error('That Coach conversation is no longer available.');
 
   const { data: messages, error: messagesError } = await supabase.from('ai_messages')
-    .select('id,role,content,ui_action,created_at')
+    .select('id,role,content,ui_action,attachments,created_at')
     .eq('conversation_id', conversation.id)
     .order('created_at');
   if (messagesError) throw messagesError;
   return { conversation, messages };
 }
 
-export async function sendCoachMessage(message: string, conversationId: string | null) {
+export const MAX_COACH_ATTACHMENTS = 4;
+
+/**
+ * Uploads a picked image and returns its storage path. The path is prefixed with the
+ * user id because the bucket policies key off that first folder segment.
+ */
+export async function uploadCoachAttachment(userId: string) {
+  const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.85 });
+  if (result.canceled) return null;
+  return processAndUpload(userId, result.assets[0].uri);
+}
+
+export async function captureCoachAttachment(userId: string) {
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) {
+    throw new Error('Camera access is needed to attach a photo. You can enable it in your phone settings.');
+  }
+  const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.85 });
+  if (result.canceled) return null;
+  return processAndUpload(userId, result.assets[0].uri);
+}
+
+async function processAndUpload(userId: string, uri: string) {
+  const context = ImageManipulator.ImageManipulator.manipulate(uri);
+  context.resize({ width: 1400, height: null });
+  const rendered = await context.renderAsync();
+  const image = await rendered.saveAsync({ compress: 0.78, format: ImageManipulator.SaveFormat.JPEG });
+  const response = await fetch(image.uri);
+  if (!response.ok) throw new Error('That image could not be read.');
+  const bytes = await response.arrayBuffer();
+  if (!bytes.byteLength) throw new Error('That image was empty.');
+  const path = `${userId}/${uuid()}.jpg`;
+  const { error } = await supabase.storage.from('coach-attachments')
+    .upload(path, bytes, { contentType: 'image/jpeg', upsert: false });
+  if (error) throw error;
+  return path;
+}
+
+export async function removeCoachAttachment(path: string) {
+  await supabase.storage.from('coach-attachments').remove([path]);
+}
+
+export async function signedCoachAttachmentUrl(path: string) {
+  const { data } = await supabase.storage.from('coach-attachments').createSignedUrl(path, 60 * 60);
+  return data?.signedUrl ?? null;
+}
+
+export async function sendCoachMessage(message: string, conversationId: string | null, attachments: string[] = []) {
   const { data, error } = await supabase.functions.invoke('ai-coach', {
-    body: { message, conversationId },
+    body: { message, conversationId, ...(attachments.length ? { attachments } : {}) },
   });
   if (error instanceof FunctionsHttpError) {
     const body = await error.context.json().catch(() => null);

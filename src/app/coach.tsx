@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
@@ -6,7 +7,15 @@ import { FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { HeaderNavigationButton } from '@/components/header-navigation-button';
 import { AppText, Button, Card, ErrorState, Field, LoadingState, PressableCard, Screen } from '@/components/ui';
 import { radius, spacing } from '@/constants/tokens';
-import { coachActionSchema, type CoachGoalAction } from '@/features/coach/api/coach';
+import {
+  captureCoachAttachment,
+  coachActionSchema,
+  removeCoachAttachment,
+  signedCoachAttachmentUrl,
+  uploadCoachAttachment,
+  MAX_COACH_ATTACHMENTS,
+  type CoachGoalAction,
+} from '@/features/coach/api/coach';
 import { CoachRichText } from '@/features/coach/components/coach-rich-text';
 import {
   useApplyCoachGoal,
@@ -16,19 +25,25 @@ import {
   useSendCoachMessage,
 } from '@/features/coach/hooks/use-coach';
 import { useAppTheme } from '@/hooks/use-app-theme';
+import { useAuth } from '@/providers/auth-provider';
 import type { Tables } from '@/types/database';
 
 const prompts = ['Review my training', 'Build me a routine', 'Review my protein intake', 'Change my goal to muscle gain'];
-type CoachMessage = Pick<Tables<'ai_messages'>, 'id' | 'role' | 'content' | 'ui_action' | 'created_at'>;
+type CoachMessage = Pick<Tables<'ai_messages'>, 'id' | 'role' | 'content' | 'ui_action' | 'attachments' | 'created_at'>;
 type CoachConversation = Pick<Tables<'ai_conversations'>, 'id' | 'title' | 'created_at' | 'updated_at'>;
 
 export default function CoachScreen() {
   const { colors } = useAppTheme();
+  const { user } = useAuth();
   const params = useLocalSearchParams<{ prompt?: string }>();
   const conversationsQuery = useCoachConversations();
   const [activeId, setActiveId] = useState<string | null | undefined>(undefined);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [message, setMessage] = useState(params.prompt ?? '');
+  const [attachments, setAttachments] = useState<string[]>([]);
+  const [attaching, setAttaching] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const conversationQuery = useCoachConversation(activeId ?? null);
   const sendMessage = useSendCoachMessage();
   const applyGoal = useApplyCoachGoal();
@@ -58,6 +73,8 @@ export default function CoachScreen() {
       role: 'user' as const,
       content: sendMessage.variables.message,
       ui_action: null,
+      // Echo the images being sent so the bubble looks the same before and after the round trip.
+      attachments: sendMessage.variables.attachments ?? [],
       created_at: new Date().toISOString(),
     }];
   }, [activeId, conversationQuery.data?.messages, sendMessage.isPending, sendMessage.variables]);
@@ -95,13 +112,38 @@ export default function CoachScreen() {
     const content = message.trim();
     if (!content || sendMessage.isPending) return;
     const targetId = activeId ?? null;
+    const sending = attachments;
     setMessage('');
+    setAttachments([]);
     try {
-      const result = await sendMessage.mutateAsync({ message: content, conversationId: targetId });
+      const result = await sendMessage.mutateAsync({ message: content, conversationId: targetId, attachments: sending });
       if (!targetId) setActiveId(result.conversationId);
     } catch {
+      // Put the draft and its images back so nothing is lost on a failed send.
       setMessage(content);
+      setAttachments(sending);
     }
+  }
+
+  async function attach(source: 'camera' | 'library') {
+    if (!user || attachments.length >= MAX_COACH_ATTACHMENTS) return;
+    setAttachError(null);
+    setAttaching(true);
+    try {
+      const path = source === 'camera'
+        ? await captureCoachAttachment(user.id)
+        : await uploadCoachAttachment(user.id);
+      if (path) setAttachments((current) => [...current, path]);
+    } catch (caught) {
+      setAttachError(caught instanceof Error ? caught.message : 'Could not attach that image.');
+    } finally {
+      setAttaching(false);
+    }
+  }
+
+  function discardAttachment(path: string) {
+    setAttachments((current) => current.filter((item) => item !== path));
+    void removeCoachAttachment(path);
   }
 
   async function confirmGoal(messageId: string, action: CoachGoalAction) {
@@ -144,9 +186,22 @@ export default function CoachScreen() {
         footer={
           <View style={styles.composerWrap}>
             {sendMessage.error ? <AppText variant="caption" color={colors.danger}>{sendMessage.error.message}</AppText> : null}
+            {attachError ? <AppText variant="caption" color={colors.danger}>{attachError}</AppText> : null}
+            {attachments.length ? (
+              <View style={styles.attachmentRow}>
+                {attachments.map((path) => (
+                  <AttachmentThumb key={path} path={path} onRemove={() => discardAttachment(path)} />
+                ))}
+              </View>
+            ) : null}
             <View style={styles.composer}>
-              <Pressable accessibilityLabel="Import a workout file" onPress={() => router.push('/routine/import')} style={[styles.attachButton, { backgroundColor: colors.raised }]}>
-                <Ionicons name="attach" size={22} color={colors.primary} />
+              <Pressable
+                accessibilityLabel="Attach a photo"
+                accessibilityRole="button"
+                disabled={attaching || attachments.length >= MAX_COACH_ATTACHMENTS}
+                onPress={() => setAttachMenuOpen(true)}
+                style={[styles.attachButton, { backgroundColor: colors.raised, opacity: attaching || attachments.length >= MAX_COACH_ATTACHMENTS ? 0.4 : 1 }]}>
+                <Ionicons name={attaching ? 'hourglass-outline' : 'image-outline'} size={22} color={colors.primary} />
               </Pressable>
               <Field containerStyle={styles.composerField} label="Message Coach" placeholder="Ask anything…" multiline maxLength={4000} value={message} onChangeText={setMessage} style={styles.messageInput} />
               <Pressable
@@ -189,7 +244,19 @@ export default function CoachScreen() {
                   : undefined;
 
               if (item.role === 'user') {
-                return <View style={[styles.messageRow, styles.userRow]}><View style={[styles.userMessage, { backgroundColor: colors.raised }]}><AppText>{item.content}</AppText></View></View>;
+                const sent = Array.isArray(item.attachments) ? (item.attachments as string[]) : [];
+                return (
+                  <View style={[styles.messageRow, styles.userRow]}>
+                    <View style={[styles.userMessage, { backgroundColor: colors.raised }]}>
+                      {sent.length ? (
+                        <View style={styles.attachmentRow}>
+                          {sent.map((path) => <SentAttachment key={path} path={path} />)}
+                        </View>
+                      ) : null}
+                      <AppText>{item.content}</AppText>
+                    </View>
+                  </View>
+                );
               }
 
               return (
@@ -214,6 +281,20 @@ export default function CoachScreen() {
           />
         )}
       </Screen>
+
+      <Modal animationType="fade" transparent visible={attachMenuOpen} onRequestClose={() => setAttachMenuOpen(false)}>
+        <Pressable accessibilityLabel="Close attachment options" style={styles.sheetBackdrop} onPress={() => setAttachMenuOpen(false)}>
+          <Pressable style={[styles.sheet, { backgroundColor: colors.surface }]} onPress={() => undefined}>
+            <AppText variant="heading">Attach a photo</AppText>
+            <AppText variant="caption" color={colors.muted}>
+              Ingredients, a nutrition label, equipment, or a written plan. Coach reads what is in the picture.
+            </AppText>
+            <Button onPress={() => { setAttachMenuOpen(false); void attach('camera'); }}>Take a photo</Button>
+            <Button variant="secondary" onPress={() => { setAttachMenuOpen(false); void attach('library'); }}>Choose from library</Button>
+            <Button variant="ghost" onPress={() => setAttachMenuOpen(false)}>Cancel</Button>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <ConversationHistory
         conversations={conversationsQuery.data ?? []}
@@ -276,6 +357,47 @@ function GoalConfirmation({ action, error, interactive, onApply, onDismiss, pend
   return <Card style={styles.confirmation}><AppText variant="caption" color={colors.muted}>Confirm goal change</AppText><AppText variant="heading">{format(action.currentGoalType)} → {format(action.goalType)}</AppText>{action.notes ? <AppText variant="caption" color={colors.muted}>{action.notes}</AppText> : null}{error ? <AppText variant="caption" color={colors.danger}>{error}</AppText> : null}<Button disabled={pending || action.currentGoalType === action.goalType} onPress={onApply}>{action.currentGoalType === action.goalType ? 'Already your goal' : pending ? 'Updating…' : 'Update goal'}</Button><Button variant="ghost" disabled={pending} onPress={onDismiss}>Keep current</Button></Card>;
 }
 
+/** Read-only thumbnail for an attachment already sent, shown inside the message bubble. */
+function SentAttachment({ path }: { path: string }) {
+  const { colors } = useAppTheme();
+  const [uri, setUri] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void signedCoachAttachmentUrl(path).then((url) => { if (!cancelled) setUri(url); });
+    return () => { cancelled = true; };
+  }, [path]);
+  return uri
+    ? <Image source={{ uri }} style={styles.attachmentImage} contentFit="cover" transition={120} accessibilityLabel="Photo you sent" />
+    : <View style={[styles.attachmentImage, { backgroundColor: colors.surface }]} />;
+}
+
+/** Resolves the private storage path to a viewable URL for the compose preview. */
+function AttachmentThumb({ path, onRemove }: { path: string; onRemove: () => void }) {
+  const { colors } = useAppTheme();
+  const [uri, setUri] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void signedCoachAttachmentUrl(path).then((url) => { if (!cancelled) setUri(url); });
+    return () => { cancelled = true; };
+  }, [path]);
+
+  return (
+    <View style={styles.attachmentThumb}>
+      {uri
+        ? <Image source={{ uri }} style={styles.attachmentImage} contentFit="cover" transition={120} accessibilityLabel="Attached photo" />
+        : <View style={[styles.attachmentImage, { backgroundColor: colors.raised }]} />}
+      <Pressable
+        accessibilityLabel="Remove attachment"
+        accessibilityRole="button"
+        hitSlop={6}
+        onPress={onRemove}
+        style={[styles.attachmentRemove, { backgroundColor: colors.background }]}>
+        <Ionicons name="close" size={14} color={colors.text} />
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, paddingBottom: 0, gap: spacing.md },
   header: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -284,7 +406,7 @@ const styles = StyleSheet.create({
   emptyMessages: { flexGrow: 1, justifyContent: 'center' },
   messageRow: { minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   userRow: { justifyContent: 'flex-end' },
-  userMessage: { minWidth: 0, maxWidth: '84%', borderRadius: radius.lg, borderBottomRightRadius: radius.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
+  userMessage: { gap: spacing.sm, minWidth: 0, maxWidth: '84%', borderRadius: radius.lg, borderBottomRightRadius: radius.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   coachMark: { width: 28, height: 28, flexShrink: 0, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
   assistantMessage: { flex: 1, minWidth: 0, gap: spacing.md, paddingTop: spacing.xs },
   empty: { gap: spacing.lg, paddingVertical: spacing.xl },
@@ -293,6 +415,12 @@ const styles = StyleSheet.create({
   prompt: { minWidth: 0, minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: spacing.sm },
   thinking: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: 36, paddingVertical: spacing.sm },
   composerWrap: { gap: spacing.sm },
+  sheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: { padding: spacing.lg, paddingBottom: spacing.xxl, gap: spacing.md, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },
+  attachmentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  attachmentThumb: { width: 64, height: 64 },
+  attachmentImage: { width: 64, height: 64, borderRadius: radius.md },
+  attachmentRemove: { position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   composer: { minWidth: 0, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm },
   attachButton: { width: 48, height: 48, flexShrink: 0, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   composerField: { flex: 1 },

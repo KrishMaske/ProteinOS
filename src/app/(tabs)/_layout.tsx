@@ -57,7 +57,6 @@ export default function TabsLayout() {
         <Icon sf={{ default: 'chart.line.uptrend.xyaxis', selected: 'chart.line.uptrend.xyaxis' }} />
         <Label>Progress</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="coach" hidden />
     </NativeTabs>
   );
 }

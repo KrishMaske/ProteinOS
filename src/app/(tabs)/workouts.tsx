@@ -156,7 +156,7 @@ export default function WorkoutsScreen() {
                 title="Coach"
                 accessibilityLabel="Ask Coach to build a routine"
                 href={{
-                  pathname: "/(tabs)/coach",
+                  pathname: "/coach",
                   params: { prompt: "Build me a routine" },
                 }}
               />

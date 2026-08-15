@@ -27,6 +27,7 @@ function AppNavigator() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="coach" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings', presentation: 'modal' }} />
         <Stack.Screen name="exercises/index" options={{ title: 'Exercises' }} />
         <Stack.Screen name="exercise/[id]" options={{ title: 'Exercise' }} />

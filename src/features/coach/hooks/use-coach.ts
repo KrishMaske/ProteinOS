@@ -33,7 +33,7 @@ export function useCoachConversation(conversationId: string | null) {
 export function useSendCoachMessage() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ message, conversationId }: { message: string; conversationId: string | null }) => sendCoachMessage(message, conversationId),
+    mutationFn: ({ message, conversationId, attachments }: { message: string; conversationId: string | null; attachments?: string[] }) => sendCoachMessage(message, conversationId, attachments),
     onSuccess: (result) => result.uiAction?.type === 'review_routine'
       ? Promise.all([
           client.invalidateQueries({ queryKey: ['routines'] }),
