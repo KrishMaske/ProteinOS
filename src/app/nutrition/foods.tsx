@@ -105,9 +105,6 @@ function SavedFoodRow({ food, logged, pending, onLog }: { food: SavedFood; logge
         disabled={pending}
         onPress={onLog}
         style={({ pressed }) => [styles.foodCopy, { opacity: pending ? 0.5 : pressed ? 0.65 : 1 }]}>
-        <View style={[styles.foodIcon, { backgroundColor: logged ? colors.primary : colors.raised }]}>
-          <Ionicons name={logged ? 'checkmark' : pending ? 'ellipsis-horizontal' : 'restaurant-outline'} size={19} color={logged ? colors.onPrimary : colors.primary} />
-        </View>
         <View style={styles.flex}>
           <AppText variant="heading" numberOfLines={1}>{food.name}</AppText>
           <AppText variant="caption" color={logged ? colors.primary : colors.muted} numberOfLines={1}>
@@ -150,7 +147,6 @@ const styles = StyleSheet.create({
   list: { gap: spacing.sm },
   foodRow: { minWidth: 0, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.lg, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   foodCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  foodIcon: { width: 42, height: 42, flexShrink: 0, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   detailButton: { width: 44, height: 44, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1, minWidth: 0, gap: spacing.xs },
 });
