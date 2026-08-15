@@ -193,9 +193,7 @@ export default function RecipeEditorScreen() {
 
       <Card>
         <AppText variant="heading">Ingredients</AppText>
-        <AppText variant="caption" color={colors.muted}>
-          Macros for the whole recipe. Per-serving figures are worked out from the servings above.
-        </AppText>
+        <AppText variant="caption" color={colors.muted}>Macros for the whole recipe, not per serving.</AppText>
         {ingredients.map((item, index) => (
           <View key={item.key} style={[styles.ingredient, index > 0 && { borderTopColor: colors.line, borderTopWidth: StyleSheet.hairlineWidth }]}>
             <View style={styles.ingredientHead}>
@@ -262,7 +260,7 @@ function RecipePhoto({ path }: { path: string | null }) {
     return (
       <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: colors.raised }]}>
         <Ionicons name="camera-outline" size={28} color={colors.muted} />
-        <AppText variant="caption" color={colors.muted}>Add a photo of the dish</AppText>
+        <AppText variant="caption" color={colors.muted}>Add a photo</AppText>
       </View>
     );
   }

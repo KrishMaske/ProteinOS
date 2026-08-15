@@ -106,14 +106,12 @@ function RecipeShortcuts({ mealType }: { mealType: Database['public']['Enums']['
 
   if (query.isLoading || !query.data?.length) {
     return (
-      <View style={styles.mealSection}>
+      <View style={styles.recipeSection}>
         <SectionHeader title="Recipes" />
         {query.isLoading ? null : (
           <>
-            <AppText variant="caption" color={colors.muted}>
-              Save something you cook and logging a serving is one tap from here.
-            </AppText>
-            <Link href="/nutrition/recipes" asChild><Button variant="secondary">Add a recipe</Button></Link>
+            <EmptyState title="No recipes yet" description="Save something you cook once, then log a serving from here." />
+            <Link href="/nutrition/recipes" asChild><Button>Add a recipe</Button></Link>
           </>
         )}
       </View>
@@ -121,7 +119,7 @@ function RecipeShortcuts({ mealType }: { mealType: Database['public']['Enums']['
   }
 
   return (
-    <View style={styles.mealSection}>
+    <View style={styles.recipeSection}>
       <SectionHeader title="Recipes" />
       <View style={styles.cardList}>
         {recipes.map((recipe) => {
@@ -158,7 +156,7 @@ function RecipeShortcuts({ mealType }: { mealType: Database['public']['Enums']['
         })}
       </View>
       <Link href="/nutrition/recipes" asChild>
-        <Button variant="secondary">
+        <Button>
           {query.data.length > 3 ? `All ${query.data.length} recipes` : 'Manage recipes'}
         </Button>
       </Link>
@@ -194,6 +192,9 @@ const styles = StyleSheet.create({
   recipeCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   recipeLog: { minHeight: 40, flexShrink: 0, paddingHorizontal: spacing.md, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   mealSection: { minWidth: 0, gap: spacing.md },
+  // Trims the screen's 24pt gap after the logging buttons, so the run into Recipes
+  // matches the tighter gap its own button makes with Meals below.
+  recipeSection: { minWidth: 0, gap: spacing.md, marginTop: -spacing.sm },
   group: { minWidth: 0, gap: spacing.sm },
   mealRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   mealIcon: { width: 42, height: 42, flexShrink: 0, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },

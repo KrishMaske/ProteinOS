@@ -86,11 +86,10 @@ export default function RecipesScreen() {
       {query.isLoading ? <LoadingState label="Loading recipes…" /> : null}
       {query.isError ? <ErrorState message={query.error.message} onRetry={() => query.refetch()} /> : null}
       {!query.isLoading && !query.isError && !query.data?.length ? (
-        <EmptyState
-          title="Save what you actually cook"
-          description="Add a recipe once with its ingredients and a photo, then log a serving whenever you eat it."
-          action={<Link href={'/nutrition/recipe/new' as Href} asChild><Button>Add your first recipe</Button></Link>}
-        />
+        <>
+          <EmptyState title="No recipes yet" description="Save something you cook once, then log a serving whenever you eat it." />
+          <Link href={'/nutrition/recipe/new' as Href} asChild><Button>Add your first recipe</Button></Link>
+        </>
       ) : null}
       {query.data?.length && !recipes.length ? <EmptyState title="No match" description="Try another recipe name." /> : null}
 
