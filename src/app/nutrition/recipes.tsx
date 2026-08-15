@@ -144,9 +144,9 @@ function RecipeRow({ recipe, logged, pending, onLog }: {
       <Link href={`/nutrition/recipe/${recipe.id}` as Href} asChild>
         <Pressable
           accessibilityLabel={`View and edit ${recipe.name}`}
-          hitSlop={6}
+          hitSlop={10}
           style={({ pressed }) => [styles.detailButton, { opacity: pressed ? 0.5 : 1 }]}>
-          <Ionicons name="information-circle-outline" size={22} color={colors.muted} />
+          <Ionicons name="information-circle-outline" size={26} color={colors.muted} />
         </Pressable>
       </Link>
     </View>
@@ -162,6 +162,6 @@ const styles = StyleSheet.create({
   list: { gap: spacing.sm },
   recipeRow: { minWidth: 0, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.lg, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   recipeCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  detailButton: { width: 44, height: 44, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  detailButton: { width: 52, height: 52, flexShrink: 0, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1, minWidth: 0, gap: 2 },
 });

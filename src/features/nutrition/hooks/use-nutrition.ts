@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createFoodLog, createSavedFood, deleteFoodLog, deleteSavedFood, getDailyNutrition, getFoodLog, getSavedFood, getSavedFoods, logSavedFood, updateFoodItem, updateFoodLog, updateSavedFood } from '@/features/nutrition/api/nutrition';
+import { createFoodLog, createSavedFood, deleteFoodLog, setFoodLogItemQuantity, deleteSavedFood, getDailyNutrition, getFoodLog, getSavedFood, getSavedFoods, logSavedFood, updateFoodItem, updateFoodLog, updateSavedFood } from '@/features/nutrition/api/nutrition';
 import type { Database, TablesInsert, TablesUpdate } from '@/types/database';
 
 type CreateFoodLogInput = {
@@ -64,6 +64,17 @@ export function useLogSavedFood(date: string) {
     onSuccess: () => Promise.all([
       client.invalidateQueries({ queryKey: savedFoodKeys.all }),
       client.invalidateQueries({ queryKey: nutritionKeys.day(date) }),
+      client.invalidateQueries({ queryKey: ['today'] }),
+    ]),
+  });
+}
+
+export function useSetFoodLogItemQuantity() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, quantity }: { itemId: string; quantity: number }) => setFoodLogItemQuantity(itemId, quantity),
+    onSuccess: () => Promise.all([
+      client.invalidateQueries({ queryKey: ['nutrition'] }),
       client.invalidateQueries({ queryKey: ['today'] }),
     ]),
   });

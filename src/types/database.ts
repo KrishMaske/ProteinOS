@@ -1557,6 +1557,32 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      set_food_log_item_quantity: {
+        Args: { target_item_id: string; target_quantity: number }
+        Returns: {
+          calories: number
+          carbohydrate_grams: number
+          confidence: number | null
+          created_at: string
+          estimate_note: string | null
+          fat_grams: number
+          fiber_grams: number | null
+          food_log_id: string
+          grams: number | null
+          id: string
+          name: string
+          protein_grams: number
+          quantity: number | null
+          unit: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "food_log_items"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       stage_routine_import_review: {
         Args: {
           target_ai_run_id: string

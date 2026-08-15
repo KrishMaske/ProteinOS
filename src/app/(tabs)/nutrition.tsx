@@ -6,12 +6,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { AppText, Button, Card, EmptyState, ErrorState, LoadingState, PressableCard, ProgressBar, Screen, SectionHeader } from '@/components/ui';
 import { radius, spacing } from '@/constants/tokens';
 import { perServing, recipeTotals } from '@/features/nutrition/api/recipes';
-import { useDailyNutrition } from '@/features/nutrition/hooks/use-nutrition';
+import { useDailyNutrition, useSetFoodLogItemQuantity } from '@/features/nutrition/hooks/use-nutrition';
 import { useLogRecipe, useRecipes } from '@/features/nutrition/hooks/use-recipes';
 import { RecipeImage } from '@/features/nutrition/components/recipe-image';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { localDateKey } from '@/lib/date';
-import type { Database } from '@/types/database';
+import type { Database, Tables } from '@/types/database';
 
 const mealOrder: Database['public']['Enums']['meal_type'][] = ['breakfast', 'lunch', 'dinner', 'snacks', 'other'];
 
@@ -65,18 +65,21 @@ export default function NutritionScreen() {
                 const protein = Math.round(log.food_log_items.reduce((sum, item) => sum + (item.protein_grams ?? 0), 0));
                 // A single-item log carries its own count, so repeat quick-adds read as
                 // "Roti x4" rather than four rows saying the same thing.
+                // A single-item log carries its own count, so it can be stepped in place
+                // rather than opening the editor to change a number.
                 const single = log.food_log_items.length === 1 ? log.food_log_items[0] : null;
-                const count = single && Number(single.quantity ?? 0) > 1 ? Math.round(Number(single.quantity)) : null;
                 return (
                   <Link key={log.id} href={{ pathname: '/nutrition/[id]', params: { id: log.id } }} asChild>
                     <PressableCard>
                       <View style={styles.mealRow}>
                         <View style={styles.flex}>
-                          <AppText variant="heading" numberOfLines={2}>{log.name ?? 'Meal'}{count ? ` x${count}` : ''}</AppText>
+                          <AppText variant="heading" numberOfLines={2}>{log.name ?? 'Meal'}</AppText>
                           <AppText variant="caption" color={colors.muted}>{protein}g protein{log.source === 'photo_estimate' ? ' · photo estimate' : ''}</AppText>
                         </View>
+                        {single && Number(single.quantity ?? 0) > 0 ? (
+                          <CountStepper item={single} />
+                        ) : null}
                         <View style={styles.mealCalories}><AppText variant="heading">{entryCalories}</AppText><AppText variant="caption" color={colors.muted}>kcal</AppText></View>
-                        <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                       </View>
                     </PressableCard>
                   </Link>
@@ -87,6 +90,39 @@ export default function NutritionScreen() {
         }) : <EmptyState title="No meals yet" description="Add what you ate, or use a photo for an estimate you can review before saving." />}
       </View>
     </Screen>
+  );
+}
+
+/**
+ * Adjusts an entry's count in place. The macros move with it server side, so the day
+ * totals above stay in step without a second round trip.
+ */
+function CountStepper({ item }: { item: Tables<'food_log_items'> }) {
+  const { colors } = useAppTheme();
+  const setQuantity = useSetFoodLogItemQuantity();
+  const count = Number(item.quantity ?? 0);
+  const step = (next: number) => setQuantity.mutate({ itemId: item.id, quantity: next });
+
+  return (
+    <View style={styles.stepper}>
+      <Pressable
+        accessibilityLabel={`Decrease ${item.name} count`}
+        disabled={count <= 1 || setQuantity.isPending}
+        hitSlop={6}
+        onPress={() => step(count - 1)}
+        style={({ pressed }) => [styles.stepButton, { backgroundColor: colors.raised, opacity: count <= 1 || setQuantity.isPending ? 0.35 : pressed ? 0.6 : 1 }]}>
+        <Ionicons name="remove" size={18} color={colors.text} />
+      </Pressable>
+      <AppText variant="heading" style={styles.stepCount}>{count % 1 === 0 ? count : count.toFixed(1)}</AppText>
+      <Pressable
+        accessibilityLabel={`Increase ${item.name} count`}
+        disabled={setQuantity.isPending}
+        hitSlop={6}
+        onPress={() => step(count + 1)}
+        style={({ pressed }) => [styles.stepButton, { backgroundColor: colors.raised, opacity: setQuantity.isPending ? 0.35 : pressed ? 0.6 : 1 }]}>
+        <Ionicons name="add" size={18} color={colors.text} />
+      </Pressable>
+    </View>
   );
 }
 
@@ -157,7 +193,7 @@ function RecipeShortcuts({ mealType }: { mealType: Database['public']['Enums']['
                   accessibilityLabel={`View and edit ${recipe.name}`}
                   hitSlop={6}
                   style={({ pressed }) => [styles.detailButton, { opacity: pressed ? 0.5 : 1 }]}>
-                  <Ionicons name="information-circle-outline" size={22} color={colors.muted} />
+                  <Ionicons name="information-circle-outline" size={26} color={colors.muted} />
                 </Pressable>
               </Link>
             </View>
@@ -199,13 +235,16 @@ const styles = StyleSheet.create({
   cardList: { minWidth: 0, gap: spacing.sm },
   recipeRow: { minWidth: 0, borderRadius: radius.lg, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   recipeCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  detailButton: { width: 44, height: 44, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  detailButton: { width: 52, height: 52, flexShrink: 0, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
   mealSection: { minWidth: 0, gap: spacing.md },
   // Trims the screen's 24pt gap after the logging buttons, so the run into Recipes
   // matches the tighter gap its own button makes with Meals below.
   recipeSection: { minWidth: 0, gap: spacing.md, marginTop: -spacing.sm },
   group: { minWidth: 0, gap: spacing.sm },
   mealRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  stepper: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  stepButton: { width: 40, height: 40, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
+  stepCount: { minWidth: 26, textAlign: 'center', fontVariant: ['tabular-nums'] },
   mealCalories: { flexShrink: 0, alignItems: 'flex-end' },
   flex: { flex: 1, minWidth: 0 },
 });

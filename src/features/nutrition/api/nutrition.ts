@@ -27,6 +27,16 @@ export async function saveFoodAnalysis(userId: string, date: string, mealType: T
 export async function getFoodLog(id: string) { const { data, error } = await supabase.from('food_logs').select('*,food_log_items(*)').eq('id', id).single(); if (error) throw error; return data; }
 export async function updateFoodLog(id: string, values: Partial<Pick<TablesInsert<'food_logs'>, 'name' | 'meal_type'>>) { const { error } = await supabase.from('food_logs').update(values).eq('id', id); if (error) throw error; }
 export async function updateFoodItem(id: string, values: Partial<Pick<TablesInsert<'food_log_items'>, 'name' | 'grams' | 'calories' | 'protein_grams' | 'carbohydrate_grams' | 'fat_grams' | 'fiber_grams'>>) { const { error } = await supabase.from('food_log_items').update(values).eq('id', id); if (error) throw error; }
+/** Adjusts a single entry's count, scaling its macros by the same ratio. */
+export async function setFoodLogItemQuantity(itemId: string, quantity: number) {
+  const { data, error } = await supabase.rpc('set_food_log_item_quantity', {
+    target_item_id: itemId,
+    target_quantity: quantity,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function deleteFoodLog(id: string, photoPath: string | null) { const { error } = await supabase.from('food_logs').delete().eq('id', id); if (error) throw error; if (photoPath) await supabase.storage.from('food-photos').remove([photoPath]); }
 
 export async function getSavedFoods() {
