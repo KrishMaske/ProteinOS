@@ -1,5 +1,5 @@
-import { Link, useLocalSearchParams } from 'expo-router';
-import { useState, type PropsWithChildren } from 'react';
+import { Link, router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useState, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, EmptyState, ErrorState, Field, LoadingState, PressableCard, Screen, SectionHeader } from '@/components/ui';
@@ -40,12 +40,20 @@ export default function ProgressScreen() {
   const { colors } = useAppTheme();
   const query = useProgressDashboard();
   const [range, setRange] = useState<Range>('3M');
-  // Today links straight to a segment, so honour that on first render.
   const { segment: requested } = useLocalSearchParams<{ segment?: string }>();
-  const [segment, setSegment] = useState<Segment>(
-    () => segments.some((item) => item.key === requested) ? (requested as Segment) : 'body',
-  );
+  const [segment, setSegment] = useState<Segment>('body');
   const [showAllMetrics, setShowAllMetrics] = useState(false);
+
+  // This tab stays mounted, so a useState initialiser would only ever read the first
+  // link. Applying on focus makes every tap from Today land, and clearing the param
+  // afterwards stops a later tab-bar visit snapping back to the same segment.
+  useFocusEffect(
+    useCallback(() => {
+      if (!requested) return;
+      if (segments.some((item) => item.key === requested)) setSegment(requested as Segment);
+      router.setParams({ segment: undefined });
+    }, [requested]),
+  );
   if (query.isLoading) return <Screen safeEdges={['top', 'left', 'right']}><LoadingState /></Screen>;
   if (query.isError) return <Screen safeEdges={['top', 'left', 'right']}><ErrorState message={query.error.message} onRetry={() => query.refetch()} /></Screen>;
 
