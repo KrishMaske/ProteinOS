@@ -27,7 +27,9 @@ function AppNavigator() {
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-        <Stack.Screen name="coach" options={{ headerShown: false, presentation: 'modal' }} />
+        {/* fullScreenModal, not modal: a sheet leaves a gap above the chat, and its
+            swipe-to-dismiss competes with scrolling the message list. */}
+        <Stack.Screen name="coach" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
         <Stack.Screen name="settings" options={{ title: 'Settings', presentation: 'modal' }} />
         <Stack.Screen name="exercises/index" options={{ title: 'Exercises' }} />
         <Stack.Screen name="exercise/[id]" options={{ title: 'Exercise' }} />

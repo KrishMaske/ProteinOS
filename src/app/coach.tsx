@@ -171,20 +171,20 @@ export default function CoachScreen() {
   }
 
   if (conversationsQuery.isLoading || activeId === undefined) {
-    return <Screen safeEdges={['top', 'left', 'right']}><LoadingState label="Loading Coach…" /></Screen>;
+    return <Screen safeEdges={['top', 'left', 'right', 'bottom']}><LoadingState label="Loading Coach…" /></Screen>;
   }
   if (conversationsQuery.isError) {
-    return <Screen safeEdges={['top', 'left', 'right']}><ErrorState message={conversationsQuery.error.message} onRetry={() => conversationsQuery.refetch()} /></Screen>;
+    return <Screen safeEdges={['top', 'left', 'right', 'bottom']}><ErrorState message={conversationsQuery.error.message} onRetry={() => conversationsQuery.refetch()} /></Screen>;
   }
   if (activeId && conversationQuery.isError) {
-    return <Screen safeEdges={['top', 'left', 'right']}><ErrorState message={conversationQuery.error.message} onRetry={() => conversationQuery.refetch()} /></Screen>;
+    return <Screen safeEdges={['top', 'left', 'right', 'bottom']}><ErrorState message={conversationQuery.error.message} onRetry={() => conversationQuery.refetch()} /></Screen>;
   }
 
   return (
     <>
       <Screen
         scroll={false}
-        safeEdges={['top', 'left', 'right']}
+        safeEdges={['top', 'left', 'right', 'bottom']}
         contentContainerStyle={styles.screen}
         footer={
           <View style={styles.composerWrap}>
@@ -206,7 +206,7 @@ export default function CoachScreen() {
                 style={[styles.attachButton, { backgroundColor: colors.raised, opacity: attaching || attachments.length >= MAX_COACH_ATTACHMENTS ? 0.4 : 1 }]}>
                 <Ionicons name={attaching ? 'hourglass-outline' : 'image-outline'} size={22} color={colors.primary} />
               </Pressable>
-              <Field containerStyle={styles.composerField} label="Message Coach" placeholder="Ask anything…" multiline maxLength={4000} value={message} onChangeText={setMessage} style={styles.messageInput} />
+              <Field containerStyle={styles.composerField} label="Message Coach" hideLabel placeholder="Ask anything…" multiline maxLength={4000} value={message} onChangeText={setMessage} style={styles.messageInput} />
               <Pressable
                 accessibilityLabel="Send message"
                 accessibilityRole="button"

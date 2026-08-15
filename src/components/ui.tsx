@@ -108,14 +108,20 @@ export function Button({ children, variant = 'primary', disabled, style, ...prop
   );
 }
 
-export function Field({ containerStyle, label, error, ...props }: ComponentProps<typeof TextInput> & { containerStyle?: ViewStyle; label: string; error?: string }) {
+export function Field({ containerStyle, label, error, hideLabel, ...props }: ComponentProps<typeof TextInput> & {
+  containerStyle?: ViewStyle;
+  label: string;
+  error?: string;
+  /** Keeps the label for screen readers but drops it visually, for chat-style composers. */
+  hideLabel?: boolean;
+}) {
   const { colors } = useAppTheme();
   const [revealed, setRevealed] = useState(false);
   // Any secure field gets a reveal control, so every password in the app behaves alike.
   const secure = Boolean(props.secureTextEntry);
   return (
     <View style={[styles.fieldWrap, containerStyle]}>
-      <AppText variant="caption" style={styles.fieldLabel}>{label}</AppText>
+      {hideLabel ? null : <AppText variant="caption" style={styles.fieldLabel}>{label}</AppText>}
       <View style={styles.fieldRow}>
         <TextInput
           accessibilityLabel={label}
