@@ -64,6 +64,12 @@ export function Screen({ children, contentContainerStyle, footer, safeEdges = ['
   const content = <View style={[styles.screenContent, compact && styles.compactScreenContent, contentContainerStyle]}>{children}</View>;
   const scrollContent = scroll ? (
     <ScrollView
+      // Without flex the list sizes to its content and cannot give space back when the
+      // keyboard padding shrinks the container, so the footer is pushed down under the
+      // keyboard instead of the scroll area getting shorter. Same fault the Coach
+      // message list had; every screen with a footer scrolls, which is why they all
+      // stayed covered while Coach came right.
+      style={styles.scrollView}
       automaticallyAdjustKeyboardInsets={!footer}
       contentContainerStyle={styles.scroll}
       contentInsetAdjustmentBehavior="automatic"
@@ -210,6 +216,7 @@ export function ProgressBar({ label, value }: { label: string; value: number }) 
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  scrollView: { flex: 1 },
   scroll: { flexGrow: 1 },
   screenContent: { width: '100%', maxWidth: 720, minWidth: 0, alignSelf: 'center', paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.huge, gap: spacing.xl, flexGrow: 1 },
   compactScreenContent: { paddingHorizontal: spacing.md, paddingTop: spacing.md, gap: spacing.md },
