@@ -346,6 +346,10 @@ export default function SettingsScreen() {
         </View>
       </SettingsSection>
 
+      <SettingsSection title="Security">
+        <ChangePassword email={user?.email ?? null} />
+      </SettingsSection>
+
       {update.error || updateGoal.error ? (
         <AppText variant="caption" color={colors.danger}>{update.error?.message ?? updateGoal.error?.message}</AppText>
       ) : null}
@@ -361,6 +365,87 @@ export default function SettingsScreen() {
       </Pressable>
       {logoutError ? <AppText variant="caption" color={colors.danger}>{logoutError}</AppText> : null}
     </Screen>
+  );
+}
+
+/**
+ * Supabase authorises a password change from the session alone, so the current password
+ * is checked explicitly first. Without that, anyone who picked up an unlocked phone could
+ * lock the owner out of their own account.
+ */
+function ChangePassword({ email }: { email: string | null }) {
+  const { colors } = useAppTheme();
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  function reset() {
+    setCurrent('');
+    setNext('');
+    setConfirm('');
+    setError(null);
+  }
+
+  async function submit() {
+    if (pending) return;
+    setError(null);
+    setDone(false);
+    if (!email) return setError('No email address is attached to this account.');
+    if (next.length < 8) return setError('Use at least 8 characters for the new password.');
+    if (next !== confirm) return setError('The new passwords do not match.');
+    if (next === current) return setError('The new password must differ from the current one.');
+
+    setPending(true);
+    try {
+      // Re-authenticating proves the current password; it refreshes the existing session
+      // rather than starting a second one.
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password: current });
+      if (signInError) {
+        setError('That current password is not right.');
+        return;
+      }
+      const { error: updateError } = await supabase.auth.updateUser({ password: next });
+      if (updateError) {
+        setError(updateError.message);
+        return;
+      }
+      reset();
+      setOpen(false);
+      setDone(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not change the password.');
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <>
+        <SelectorRow
+          expanded={false}
+          label="Password"
+          value="Change"
+          onPress={() => { setDone(false); setOpen(true); }}
+        />
+        {done ? <AppText variant="caption" color={colors.primary}>Password updated.</AppText> : null}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <Field label="Current password" value={current} onChangeText={setCurrent} secureTextEntry autoComplete="current-password" textContentType="password" placeholder="••••••••" />
+      <Field label="New password" value={next} onChangeText={setNext} secureTextEntry autoComplete="new-password" textContentType="newPassword" placeholder="At least 8 characters" />
+      <Field label="Confirm new password" value={confirm} onChangeText={setConfirm} secureTextEntry autoComplete="new-password" textContentType="newPassword" placeholder="••••••••" onSubmitEditing={() => void submit()} returnKeyType="done" />
+      {error ? <AppText variant="caption" color={colors.danger}>{error}</AppText> : null}
+      <Button disabled={pending} onPress={() => void submit()}>{pending ? 'Updating…' : 'Update password'}</Button>
+      <Button variant="ghost" disabled={pending} onPress={() => { reset(); setOpen(false); }}>Cancel</Button>
+    </>
   );
 }
 
