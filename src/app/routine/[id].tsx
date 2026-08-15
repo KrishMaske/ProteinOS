@@ -29,6 +29,7 @@ import {
     useReorderRoutineExercises,
     useRoutine,
 } from "@/features/routines/hooks/use-routines";
+import { useSkipRoutineDay } from "@/features/workouts/hooks/use-workout";
 import { useAppTheme } from "@/hooks/use-app-theme";
 import { useAuth } from "@/providers/auth-provider";
 
@@ -55,6 +56,7 @@ export default function RoutineDetailScreen() {
   const duplicateDay = useDuplicateRoutineDay(id);
   const reorderDays = useReorderRoutineDays(id);
   const reorderExercises = useReorderRoutineExercises(id);
+  const skipDay = useSkipRoutineDay();
 
   if (query.isLoading)
     return (
@@ -451,6 +453,25 @@ export default function RoutineDetailScreen() {
                     <Button variant="secondary">Add exercise</Button>
                   </Link>
                 ) : null}
+                {isNext && routine.status === "active" ? (
+                  <Button
+                    variant="ghost"
+                    accessibilityLabel={`Skip ${day.name}`}
+                    disabled={skipDay.isPending}
+                    onPress={() =>
+                      Alert.alert(
+                        "Skip this slot?",
+                        "The rotation moves on to the next slot. Nothing is recorded as trained.",
+                        [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Skip slot", onPress: () => skipDay.mutate(day.id) },
+                        ],
+                      )
+                    }
+                  >
+                    {skipDay.isPending ? "Skipping…" : "Skip this slot"}
+                  </Button>
+                ) : null}
                 {!day.is_rest_day &&
                 exercises.length &&
                 routine.status === "active" ? (
@@ -476,6 +497,9 @@ export default function RoutineDetailScreen() {
 
       {routineEditError ? (
         <AppText color={colors.danger}>{routineEditError.message}</AppText>
+      ) : null}
+      {skipDay.error ? (
+        <AppText color={colors.danger}>{skipDay.error.message}</AppText>
       ) : null}
 
       <View style={styles.addSlots}>
