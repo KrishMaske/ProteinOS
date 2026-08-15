@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import { Link, Stack, type Href } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, Button, EmptyState, ErrorState, Field, LoadingState, Screen } from '@/components/ui';
@@ -9,9 +8,9 @@ import { radius, spacing } from '@/constants/tokens';
 import {
   perServing,
   recipeTotals,
-  signedRecipeImageUrl,
   type RecipeWithIngredients,
 } from '@/features/nutrition/api/recipes';
+import { RecipeImage } from '@/features/nutrition/components/recipe-image';
 import { useLogRecipe, useRecipes } from '@/features/nutrition/hooks/use-recipes';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { localDateKey } from '@/lib/date';
@@ -148,28 +147,6 @@ function RecipeRow({ recipe, logged, pending, onLog }: {
   );
 }
 
-/** Recipe images live in a private bucket, so each needs a signed URL. */
-export function RecipeImage({ path, size = 56 }: { path: string | null; size?: number }) {
-  const { colors } = useAppTheme();
-  const [uri, setUri] = useState<string | null>(null);
-  useEffect(() => {
-    if (!path) return;
-    let cancelled = false;
-    void signedRecipeImageUrl(path).then((url) => { if (!cancelled) setUri(url); });
-    return () => { cancelled = true; };
-  }, [path]);
-
-  const style = { width: size, height: size, borderRadius: radius.md };
-  if (!path || !uri) {
-    return (
-      <View style={[style, styles.placeholder, { backgroundColor: colors.raised }]}>
-        <Ionicons name="restaurant-outline" size={Math.round(size * 0.4)} color={colors.muted} />
-      </View>
-    );
-  }
-  return <Image source={{ uri }} style={style} contentFit="cover" transition={140} accessibilityLabel="Recipe photo" />;
-}
-
 const styles = StyleSheet.create({
   intro: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   addButton: { width: 44, height: 44, flexShrink: 0, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
@@ -179,7 +156,6 @@ const styles = StyleSheet.create({
   list: { gap: spacing.sm },
   recipeRow: { minWidth: 0, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.lg, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   recipeCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  placeholder: { alignItems: 'center', justifyContent: 'center' },
   logButton: { minHeight: 42, minWidth: 70, flexShrink: 0, paddingHorizontal: spacing.md, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
   flex: { flex: 1, minWidth: 0, gap: 2 },
 });
