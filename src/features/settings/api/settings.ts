@@ -11,7 +11,7 @@ export async function getSettings() {
   const today = localDateKey();
   const windowStart = new Date(Date.now() - TREND_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const [profile, goal, latestWeight, weights, latestWaist, target, intake] = await Promise.all([
-    supabase.from('profiles').select('display_name,preferred_units,delete_food_photo_after_analysis,training_days_per_week,preferred_session_minutes,birth_date,height_cm,biological_sex,target_weight_kg,goal_body_fat_min,goal_body_fat_max').single(),
+    supabase.from('profiles').select('display_name,preferred_units,delete_food_photo_after_analysis,training_days_per_week,preferred_session_minutes,birth_date,height_cm,biological_sex,target_weight_kg,goal_body_fat_min,goal_body_fat_max,daily_activity_level').single(),
     supabase.from('fitness_goals').select('goal_type,notes').eq('is_active', true).maybeSingle(),
     // Deliberately unbounded: someone who last weighed in months ago still has a weight,
     // and the trend window below must not decide whether targets can be derived at all.
@@ -73,6 +73,8 @@ export function estimateTargetsFromSettings({ profile, goal, latestWeight, lates
     age,
     biologicalSex: profile.biological_sex,
     trainingDaysPerWeek: profile.training_days_per_week,
+    sessionMinutes: profile.preferred_session_minutes,
+    dailyActivityLevel: profile.daily_activity_level,
     goalType: goal?.goal_type ?? null,
     targetWeightKg: profile.target_weight_kg === null ? null : Number(profile.target_weight_kg),
     bodyFatPercent: bodyFat?.percent ?? null,

@@ -469,6 +469,7 @@ export type Database = {
           biological_sex: Database["public"]["Enums"]["biological_sex"] | null
           birth_date: string | null
           created_at: string
+          daily_activity_level: Database["public"]["Enums"]["daily_activity_level"]
           delete_food_photo_after_analysis: boolean
           diet_preference: string | null
           display_name: string | null
@@ -492,6 +493,7 @@ export type Database = {
           biological_sex?: Database["public"]["Enums"]["biological_sex"] | null
           birth_date?: string | null
           created_at?: string
+          daily_activity_level?: Database["public"]["Enums"]["daily_activity_level"]
           delete_food_photo_after_analysis?: boolean
           diet_preference?: string | null
           display_name?: string | null
@@ -515,6 +517,7 @@ export type Database = {
           biological_sex?: Database["public"]["Enums"]["biological_sex"] | null
           birth_date?: string | null
           created_at?: string
+          daily_activity_level?: Database["public"]["Enums"]["daily_activity_level"]
           delete_food_photo_after_analysis?: boolean
           diet_preference?: string | null
           display_name?: string | null
@@ -1497,6 +1500,7 @@ export type Database = {
     Enums: {
       ai_run_status: "started" | "completed" | "failed" | "refused"
       biological_sex: "male" | "female" | "unspecified"
+      daily_activity_level: "sedentary" | "light" | "moderate" | "very_active"
       food_source: "manual" | "quick_add" | "photo_estimate"
       goal_type:
         | "recomp"
@@ -1638,6 +1642,7 @@ export const Constants = {
     Enums: {
       ai_run_status: ["started", "completed", "failed", "refused"],
       biological_sex: ["male", "female", "unspecified"],
+      daily_activity_level: ["sedentary", "light", "moderate", "very_active"],
       food_source: ["manual", "quick_add", "photo_estimate"],
       goal_type: [
         "recomp",

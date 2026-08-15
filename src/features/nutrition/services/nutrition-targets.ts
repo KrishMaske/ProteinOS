@@ -2,6 +2,7 @@ import type { Database } from '@/types/database';
 
 export type GoalType = Database['public']['Enums']['goal_type'];
 export type BiologicalSex = Database['public']['Enums']['biological_sex'];
+export type DailyActivityLevel = Database['public']['Enums']['daily_activity_level'];
 
 export type WeightReading = { measuredAt: string; weightKg: number };
 export type WeightTrend = {
@@ -19,6 +20,10 @@ export type TargetInputs = {
   age: number;
   biologicalSex?: BiologicalSex | null;
   trainingDaysPerWeek?: number | null;
+  /** Minutes per training session, used to cost the training burn. */
+  sessionMinutes?: number | null;
+  /** Activity outside training. Defaults to light rather than assuming a desk job. */
+  dailyActivityLevel?: DailyActivityLevel | null;
   goalType?: GoalType | null;
   targetWeightKg?: number | null;
   /** Current estimated body fat, used with `goalBodyFat` to taper the adjustment. */
@@ -48,8 +53,25 @@ export type NutritionTargets = {
  */
 const SEX_CONSTANT: Record<BiologicalSex, number> = { male: 5, female: -161, unspecified: -78 };
 
-/** Harris-Benedict activity multipliers, keyed by how many days a week the user trains. */
-const ACTIVITY_BY_TRAINING_DAYS = [1.2, 1.2, 1.375, 1.375, 1.55, 1.55, 1.725, 1.9];
+/**
+ * Multipliers for activity *outside* deliberate training. These are the Harris-Benedict
+ * bands used as intended — they describe occupation and daily movement, not gym
+ * frequency. Training is costed separately below and added on.
+ */
+const LIFESTYLE_MULTIPLIER: Record<DailyActivityLevel, number> = {
+  sedentary: 1.2,
+  light: 1.375,
+  moderate: 1.55,
+  very_active: 1.725,
+};
+
+/**
+ * Net metabolic equivalent for a resistance-training session: the Compendium of Physical
+ * Activities puts general weight training around 5 METs, and 1 MET is resting metabolism,
+ * so only the 4 above rest is additional. One MET is 1 kcal per kg per hour.
+ */
+const TRAINING_NET_METS = 4;
+const DEFAULT_SESSION_MINUTES = 60;
 
 /** Fraction added to (or removed from) maintenance calories for each goal. */
 const GOAL_CALORIE_ADJUSTMENT: Record<GoalType, number> = {
@@ -100,13 +122,34 @@ export function basalMetabolicRate({ weightKg, heightCm, age, biologicalSex }: T
   return 10 * weightKg + 6.25 * heightCm - 5 * age + constant;
 }
 
-export function activityMultiplier(trainingDaysPerWeek?: number | null) {
+/** Multiplier for everything except deliberate training. */
+export function lifestyleMultiplier(level?: DailyActivityLevel | null) {
+  return LIFESTYLE_MULTIPLIER[level ?? 'light'];
+}
+
+/**
+ * Calories burned by training, averaged over the week. Costed from session length and
+ * frequency rather than by jumping a lifestyle multiplier, because an hour of lifting is
+ * worth roughly 250 kcal, not the several hundred a multiplier step implies.
+ */
+export function trainingCaloriesPerDay(
+  weightKg: number,
+  trainingDaysPerWeek?: number | null,
+  sessionMinutes?: number | null,
+) {
   const days = clamp(Math.round(trainingDaysPerWeek ?? 3), 0, 7);
-  return ACTIVITY_BY_TRAINING_DAYS[days];
+  const minutes = clamp(sessionMinutes ?? DEFAULT_SESSION_MINUTES, 15, 240);
+  if (days === 0 || weightKg <= 0) return 0;
+  const perSession = TRAINING_NET_METS * weightKg * (minutes / 60);
+  return (perSession * days) / 7;
 }
 
 export function maintenanceCalories(inputs: TargetInputs) {
-  return basalMetabolicRate(inputs) * activityMultiplier(inputs.trainingDaysPerWeek);
+  const weightKg = inputs.trend?.smoothedWeightKg ?? inputs.weightKg;
+  return (
+    basalMetabolicRate(inputs) * lifestyleMultiplier(inputs.dailyActivityLevel)
+    + trainingCaloriesPerDay(weightKg, inputs.trainingDaysPerWeek, inputs.sessionMinutes)
+  );
 }
 
 /**

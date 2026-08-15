@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  activityMultiplier,
+  lifestyleMultiplier,
+  trainingCaloriesPerDay,
   ageFromBirthDate,
   basalMetabolicRate,
   calculateNutritionTargets,
@@ -28,6 +29,8 @@ const reference: TargetInputs = {
   age: 30,
   biologicalSex: 'male',
   trainingDaysPerWeek: 4,
+  sessionMinutes: 60,
+  dailyActivityLevel: 'light',
   goalType: 'maintenance',
 };
 
@@ -49,18 +52,40 @@ describe('basalMetabolicRate', () => {
   });
 });
 
-describe('activityMultiplier', () => {
-  it('scales with training days', () => {
-    expect(activityMultiplier(0)).toBe(1.2);
-    expect(activityMultiplier(3)).toBe(1.375);
-    expect(activityMultiplier(5)).toBe(1.55);
-    expect(activityMultiplier(7)).toBe(1.9);
+describe('lifestyleMultiplier', () => {
+  it('describes activity outside training, not gym frequency', () => {
+    expect(lifestyleMultiplier('sedentary')).toBe(1.2);
+    expect(lifestyleMultiplier('light')).toBe(1.375);
+    expect(lifestyleMultiplier('moderate')).toBe(1.55);
+    expect(lifestyleMultiplier('very_active')).toBe(1.725);
   });
 
-  it('clamps out-of-range and missing values', () => {
-    expect(activityMultiplier(null)).toBe(activityMultiplier(3));
-    expect(activityMultiplier(-4)).toBe(1.2);
-    expect(activityMultiplier(99)).toBe(1.9);
+  it('assumes light rather than a desk job when unset', () => {
+    expect(lifestyleMultiplier(null)).toBe(lifestyleMultiplier('light'));
+  });
+});
+
+describe('trainingCaloriesPerDay', () => {
+  it('costs a session at 4 net METs and averages it over the week', () => {
+    // 4 METs * 65.77 kg * 1 h = 263 kcal per session, six of them spread over seven days.
+    expect(trainingCaloriesPerDay(65.77, 6, 60)).toBeCloseTo((4 * 65.77 * 6) / 7, 4);
+  });
+
+  it('scales with session length and frequency', () => {
+    expect(trainingCaloriesPerDay(80, 6, 90)).toBeGreaterThan(trainingCaloriesPerDay(80, 6, 60));
+    expect(trainingCaloriesPerDay(80, 6, 60)).toBeGreaterThan(trainingCaloriesPerDay(80, 3, 60));
+  });
+
+  it('is zero without training and safe on missing inputs', () => {
+    expect(trainingCaloriesPerDay(80, 0, 60)).toBe(0);
+    expect(trainingCaloriesPerDay(0, 6, 60)).toBe(0);
+    expect(trainingCaloriesPerDay(80, null, null)).toBeGreaterThan(0);
+  });
+
+  it('stays far below the jump a multiplier step would imply', () => {
+    // Moving 1.2 -> 1.725 on a 1674 BMR would add about 880 kcal a day; an hour of
+    // lifting six times a week is worth roughly a quarter of that.
+    expect(trainingCaloriesPerDay(65.77, 6, 60)).toBeLessThan(300);
   });
 });
 
@@ -108,8 +133,11 @@ describe('calculateNutritionTargets', () => {
       trainingDaysPerWeek: 6,
       goalType: 'muscle_gain',
     });
-    expect(smallCutter.calories).toBeLessThan(1600);
-    expect(largeBulker.calories).toBeGreaterThan(3500);
+    // The point is the spread, not either bound: the flat 2000 default gave both the
+    // same number, and these two should be more than a thousand calories apart.
+    expect(largeBulker.calories - smallCutter.calories).toBeGreaterThan(1500);
+    expect(smallCutter.calories).toBeLessThan(2000);
+    expect(largeBulker.calories).toBeGreaterThan(3000);
   });
 
   it('never prescribes a deficit below resting expenditure', () => {

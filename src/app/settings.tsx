@@ -18,7 +18,8 @@ import type { Database } from '@/types/database';
 
 type Goal = Database['public']['Enums']['goal_type'];
 type Sex = Database['public']['Enums']['biological_sex'];
-type Selector = 'goal' | 'days' | 'minutes' | 'sex';
+type Activity = Database['public']['Enums']['daily_activity_level'];
+type Selector = 'goal' | 'days' | 'minutes' | 'sex' | 'activity';
 
 const goals: Goal[] = ['recomp', 'fat_loss', 'muscle_gain', 'maintenance', 'strength'];
 const goalLabels: Record<Goal, string> = {
@@ -27,6 +28,20 @@ const goalLabels: Record<Goal, string> = {
   muscle_gain: 'Build muscle',
   maintenance: 'Maintain',
   strength: 'Strength',
+};
+const activityLevels: Activity[] = ['sedentary', 'light', 'moderate', 'very_active'];
+const activityLabels: Record<Activity, string> = {
+  sedentary: 'Sedentary',
+  light: 'Lightly active',
+  moderate: 'Moderately active',
+  very_active: 'Very active',
+};
+/** Describes life outside the gym: training is counted separately. */
+const activityHints: Record<Activity, string> = {
+  sedentary: 'Desk job, little walking',
+  light: 'Some walking most days',
+  moderate: 'On your feet a lot',
+  very_active: 'Physical job or always moving',
 };
 const sexes: Sex[] = ['male', 'female', 'unspecified'];
 const sexLabels: Record<Sex, string> = { male: 'Male', female: 'Female', unspecified: 'Prefer not to say' };
@@ -148,6 +163,34 @@ export default function SettingsScreen() {
         ) : null}
         <Divider />
         <SelectorRow
+          expanded={openSelector === 'activity'}
+          label="Daily activity"
+          value={activityLabels[profile.daily_activity_level]}
+          onPress={() => toggleSelector('activity')}
+        />
+        {openSelector === 'activity' ? (
+          <>
+            <AppText variant="caption" color={colors.muted}>
+              Your day outside training. Workouts are counted separately from how often and how long you train.
+            </AppText>
+            <OptionGrid>
+              {activityLevels.map((value) => (
+                <Choice
+                  key={value}
+                  active={profile.daily_activity_level === value}
+                  disabled={update.isPending}
+                  label={`${activityLabels[value]} · ${activityHints[value]}`}
+                  onPress={() => {
+                    setOpenSelector(null);
+                    update.mutate({ daily_activity_level: value });
+                  }}
+                />
+              ))}
+            </OptionGrid>
+          </>
+        ) : null}
+        <Divider />
+        <SelectorRow
           expanded={openSelector === 'minutes'}
           label="Session length"
           value={profile.preferred_session_minutes ? `${profile.preferred_session_minutes} minutes` : 'Not set'}
@@ -239,6 +282,13 @@ export default function SettingsScreen() {
             Add your height, birth date, and a logged weight above to derive targets automatically.
           </AppText>
         )}
+      </SettingsSection>
+
+      <SettingsSection title="Everything derived">
+        <AppText variant="caption" color={colors.muted}>
+          Targets re-derive on their own whenever an input changes. Use this if you want to
+          force it, or after logging older measurements.
+        </AppText>
         <Pressable
           accessibilityRole="button"
           disabled={recalculate.isPending}
@@ -253,9 +303,14 @@ export default function SettingsScreen() {
         >
           <Ionicons name="refresh" size={18} color={colors.primary} />
           <AppText variant="caption" color={colors.primary}>
-            {recalculate.isPending ? 'Recalculating…' : 'Recalculate targets'}
+            {recalculate.isPending ? 'Recalculating…' : 'Recalculate everything'}
           </AppText>
         </Pressable>
+        {recalculate.isSuccess && !recalculate.isPending ? (
+          <AppText variant="caption" color={colors.primary}>
+            Recalculated {recalculate.data?.calories} kcal · {recalculate.data?.proteinGrams}g protein
+          </AppText>
+        ) : null}
         {recalculate.error ? <AppText variant="caption" color={colors.danger}>{recalculate.error.message}</AppText> : null}
       </SettingsSection>
 
