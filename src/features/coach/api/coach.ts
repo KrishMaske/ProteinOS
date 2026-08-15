@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { z } from 'zod';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 
+import { localDateKey } from '@/lib/date';
 import { supabase } from '@/lib/supabase/client';
 import { uuid } from '@/lib/uuid';
 
@@ -140,7 +141,7 @@ export async function signedCoachAttachmentUrl(path: string) {
 
 export async function sendCoachMessage(message: string, conversationId: string | null, attachments: string[] = []) {
   const { data, error } = await supabase.functions.invoke('ai-coach', {
-    body: { message, conversationId, ...(attachments.length ? { attachments } : {}) },
+    body: { message, conversationId, today: localDateKey(), ...(attachments.length ? { attachments } : {}) },
   });
   if (error instanceof FunctionsHttpError) {
     const body = await error.context.json().catch(() => null);

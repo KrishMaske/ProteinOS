@@ -13,6 +13,19 @@ type SupabaseClient = any;
 const nullableString = { type: ['string', 'null'] };
 const nullableNumber = { type: ['number', 'null'] };
 const goalTypes = ['recomp', 'fat_loss', 'muscle_gain', 'maintenance', 'strength'] as const;
+const mealTypes = ['breakfast', 'lunch', 'dinner', 'snacks', 'other'] as const;
+
+const loggedFoodItem = strictObject({
+  name: { type: 'string', minLength: 1, maxLength: 160 },
+  quantity: nullableNumber,
+  unit: nullableString,
+  grams: nullableNumber,
+  calories: { type: 'number', minimum: 0 },
+  proteinGrams: { type: 'number', minimum: 0 },
+  carbohydrateGrams: { type: 'number', minimum: 0 },
+  fatGrams: { type: 'number', minimum: 0 },
+  fiberGrams: nullableNumber,
+});
 
 function strictObject(properties: Record<string, unknown>, required = Object.keys(properties)) {
   return { type: 'object', additionalProperties: false, properties, required };
@@ -103,6 +116,35 @@ export const coachTools = [
           fatGrams: { type: 'number', minimum: 0 },
         }),
       },
+    }),
+  },
+  {
+    type: 'function', name: 'log_food', strict: true,
+    description: 'Log a meal the user says they ate, itemised with macros. Use get_saved_foods or get_recipes first: if the user already has that food or recipe saved, log_saved_food or log_recipe carries their own numbers instead of your estimate. State what was logged so it can be corrected. Only log what the user actually reports eating.',
+    parameters: strictObject({
+      mealType: { type: 'string', enum: mealTypes },
+      name: { type: 'string', minLength: 1, maxLength: 160 },
+      loggedDate: { ...nullableString, description: 'YYYY-MM-DD. Null means today.' },
+      items: { type: 'array', minItems: 1, maxItems: 20, items: loggedFoodItem },
+    }),
+  },
+  {
+    type: 'function', name: 'log_saved_food', strict: true,
+    description: 'Log a serving of a food the user has already saved, using their stored macros rather than an estimate. Get the id from get_saved_foods.',
+    parameters: strictObject({
+      savedFoodId: { type: 'string', minLength: 1 },
+      mealType: { type: 'string', enum: mealTypes },
+      loggedDate: { ...nullableString, description: 'YYYY-MM-DD. Null means today.' },
+    }),
+  },
+  {
+    type: 'function', name: 'log_recipe', strict: true,
+    description: 'Log servings of one of the user’s recipes, scaled from its ingredients. Get the id from get_recipes.',
+    parameters: strictObject({
+      recipeId: { type: 'string', minLength: 1 },
+      mealType: { type: 'string', enum: mealTypes },
+      servings: { type: 'number', minimum: 0.1, maximum: 20 },
+      loggedDate: { ...nullableString, description: 'YYYY-MM-DD. Null means today.' },
     }),
   },
   {
@@ -295,7 +337,9 @@ async function createRoutineDraft(client: SupabaseClient, userId: string, args: 
   return { ok: true, routineId, name: args.name, status: 'draft', requiresUserActivation: true };
 }
 
-export async function executeCoachTool(client: SupabaseClient, userId: string, name: string, args: any) {
+export async function executeCoachTool(client: SupabaseClient, userId: string, name: string, args: any, today?: string) {
+  // Falls back to the server date only when the client did not state its own.
+  const callerToday = today ?? new Date().toISOString().slice(0, 10);
   switch (name) {
     case 'get_user_profile': {
       const [profile, goal, target, metrics] = await Promise.all([
@@ -473,6 +517,67 @@ export async function executeCoachTool(client: SupabaseClient, userId: string, n
         .eq('id', args.recipeId).eq('user_id', userId).maybeSingle());
       if (!recipe) throw new Error('Recipe was not found');
       return { recipe };
+    }
+    case 'log_food': {
+      const loggedDate = args.loggedDate ?? callerToday;
+      const { data: log, error } = await client.from('food_logs').insert({
+        user_id: userId,
+        logged_date: loggedDate,
+        meal_type: args.mealType,
+        name: args.name.trim(),
+        source: 'quick_add',
+      }).select('id').single();
+      if (error) throw error;
+
+      const { error: itemError } = await client.from('food_log_items').insert(
+        args.items.map((item: any) => ({
+          food_log_id: log.id,
+          name: item.name.trim(),
+          quantity: item.quantity,
+          unit: item.unit,
+          grams: item.grams,
+          calories: item.calories,
+          protein_grams: item.proteinGrams,
+          carbohydrate_grams: item.carbohydrateGrams,
+          fat_grams: item.fatGrams,
+          fiber_grams: item.fiberGrams,
+        })),
+      );
+      if (itemError) {
+        // A log with no items contributes nothing but still shows as a meal, so it is
+        // removed rather than left behind.
+        await client.from('food_logs').delete().eq('id', log.id);
+        throw itemError;
+      }
+
+      const totals = args.items.reduce((sum: any, item: any) => ({
+        calories: sum.calories + item.calories,
+        proteinGrams: sum.proteinGrams + item.proteinGrams,
+        carbohydrateGrams: sum.carbohydrateGrams + item.carbohydrateGrams,
+        fatGrams: sum.fatGrams + item.fatGrams,
+      }), { calories: 0, proteinGrams: 0, carbohydrateGrams: 0, fatGrams: 0 });
+      return { ok: true, foodLogId: log.id, loggedDate, mealType: args.mealType, name: args.name, totals };
+    }
+    case 'log_saved_food': {
+      const loggedDate = args.loggedDate ?? callerToday;
+      const { data, error } = await client.rpc('log_saved_food', {
+        target_saved_food_id: args.savedFoodId,
+        target_logged_date: loggedDate,
+        target_meal_type: args.mealType,
+      });
+      if (error) throw error;
+      return { ok: true, loggedDate, mealType: args.mealType, log: data };
+    }
+    case 'log_recipe': {
+      const loggedDate = args.loggedDate ?? callerToday;
+      const { data, error } = await client.rpc('log_recipe', {
+        target_recipe_id: args.recipeId,
+        target_logged_date: loggedDate,
+        target_meal_type: args.mealType,
+        target_servings: args.servings,
+      });
+      if (error) throw error;
+      return { ok: true, loggedDate, mealType: args.mealType, servings: args.servings, log: data };
     }
     case 'create_recipe': {
       const { data: created, error } = await client.from('recipes').insert({
