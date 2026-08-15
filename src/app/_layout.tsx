@@ -48,6 +48,8 @@ function AppNavigator() {
         <Stack.Screen name="nutrition/log" options={{ title: 'Log food', presentation: 'modal' }} />
         <Stack.Screen name="nutrition/scan" options={{ title: 'Scan food', presentation: 'modal' }} />
         <Stack.Screen name="nutrition/foods" options={{ title: 'Saved foods' }} />
+        <Stack.Screen name="nutrition/recipes" options={{ title: 'Recipes' }} />
+        <Stack.Screen name="nutrition/recipe/[id]" options={{ title: 'Recipe', presentation: 'modal' }} />
         <Stack.Screen name="nutrition/saved/[id]" options={{ title: 'Saved food', presentation: 'modal' }} />
         <Stack.Screen name="nutrition/[id]" options={{ title: 'Edit food', presentation: 'modal' }} />
         <Stack.Screen name="progress/log" options={{ title: 'Log measurement', presentation: 'modal' }} />

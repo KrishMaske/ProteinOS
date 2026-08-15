@@ -74,6 +74,38 @@ export const coachTools = [
     parameters: strictObject({ limit: { type: 'integer', minimum: 1, maximum: 100 } }),
   },
   {
+    type: 'function', name: 'get_recipes', strict: true,
+    description: 'List the user’s saved recipes with their per-serving macros and ingredient counts.',
+    parameters: strictObject({ limit: { type: 'integer', minimum: 1, maximum: 50 } }),
+  },
+  {
+    type: 'function', name: 'get_recipe', strict: true,
+    description: 'Get one recipe in full: ingredients with macros, servings, and the method.',
+    parameters: strictObject({ recipeId: { type: 'string', minLength: 1 } }),
+  },
+  {
+    type: 'function', name: 'create_recipe', strict: true,
+    description: 'Save a new recipe for the user. Give every ingredient its macros for the WHOLE recipe, not per serving, and set servings to how many portions it makes. Tell the user it was saved and that they can edit it on the Recipes screen.',
+    parameters: strictObject({
+      name: { type: 'string', minLength: 1, maxLength: 160 },
+      description: nullableString,
+      instructions: nullableString,
+      servings: { type: 'number', minimum: 0.25, maximum: 100 },
+      ingredients: {
+        type: 'array', minItems: 1, maxItems: 40,
+        items: strictObject({
+          name: { type: 'string', minLength: 1, maxLength: 160 },
+          quantity: nullableNumber,
+          unit: nullableString,
+          calories: { type: 'number', minimum: 0 },
+          proteinGrams: { type: 'number', minimum: 0 },
+          carbohydrateGrams: { type: 'number', minimum: 0 },
+          fatGrams: { type: 'number', minimum: 0 },
+        }),
+      },
+    }),
+  },
+  {
     type: 'function', name: 'get_active_routine', strict: true,
     description: 'Get the active routine and its ordered days and exercises.',
     parameters: strictObject({ includeExercises: { type: 'boolean' } }),
@@ -137,6 +169,23 @@ const toolInputSchemas: Record<string, z.ZodType> = {
   get_body_composition: z.object({ weeks: z.number().int().min(1).max(26) }).strict(),
   get_nutrition_targets: z.object({}).strict(),
   get_saved_foods: z.object({ limit: z.number().int().min(1).max(100) }).strict(),
+  get_recipes: z.object({ limit: z.number().int().min(1).max(50) }).strict(),
+  get_recipe: z.object({ recipeId: z.string().min(1) }).strict(),
+  create_recipe: z.object({
+    name: z.string().trim().min(1).max(160),
+    description: nullableText,
+    instructions: nullableText,
+    servings: z.number().min(0.25).max(100),
+    ingredients: z.array(z.object({
+      name: z.string().trim().min(1).max(160),
+      quantity: z.number().min(0).nullable(),
+      unit: nullableText,
+      calories: z.number().min(0),
+      proteinGrams: z.number().min(0),
+      carbohydrateGrams: z.number().min(0),
+      fatGrams: z.number().min(0),
+    }).strict()).min(1).max(40),
+  }).strict(),
   get_active_routine: z.object({ includeExercises: z.boolean() }).strict(),
   search_exercises: z.object({ query: z.string(), bodyPart: nullableText, target: nullableText, equipment: nullableText, limit: z.number().int().min(1).max(20) }).strict(),
   get_exercise_details: z.object({ exerciseIds: z.array(z.string().min(1)).min(1).max(20) }).strict(),
@@ -387,6 +436,68 @@ export async function executeCoachTool(client: SupabaseClient, userId: string, n
         .order('last_logged_at', { ascending: false, nullsFirst: false })
         .limit(args.limit));
       return { foods };
+    }
+    case 'get_recipes': {
+      const recipes = dataOrThrow(await client.from('recipes')
+        .select('id,name,description,servings,updated_at,recipe_ingredients(name,calories,protein_grams,carbohydrate_grams,fat_grams)')
+        .eq('user_id', userId).order('updated_at', { ascending: false }).limit(args.limit)) ?? [];
+      return {
+        recipes: recipes.map((recipe: any) => {
+          const servings = Number(recipe.servings) || 1;
+          const sum = (key: string) => recipe.recipe_ingredients.reduce((total: number, item: any) => total + Number(item[key] ?? 0), 0);
+          return {
+            id: recipe.id,
+            name: recipe.name,
+            description: recipe.description,
+            servings,
+            ingredientCount: recipe.recipe_ingredients.length,
+            // Per serving, matching what the Recipes screen shows.
+            perServing: {
+              calories: Math.round(sum('calories') / servings),
+              proteinGrams: Math.round(sum('protein_grams') / servings),
+              carbohydrateGrams: Math.round(sum('carbohydrate_grams') / servings),
+              fatGrams: Math.round(sum('fat_grams') / servings),
+            },
+          };
+        }),
+      };
+    }
+    case 'get_recipe': {
+      const recipe = dataOrThrow(await client.from('recipes')
+        .select('*, recipe_ingredients(*)')
+        .eq('id', args.recipeId).eq('user_id', userId).maybeSingle());
+      if (!recipe) throw new Error('Recipe was not found');
+      return { recipe };
+    }
+    case 'create_recipe': {
+      const { data: created, error } = await client.from('recipes').insert({
+        user_id: userId,
+        name: args.name.trim(),
+        description: args.description,
+        instructions: args.instructions,
+        servings: args.servings,
+        source: 'coach',
+      }).select('id').single();
+      if (error) throw error;
+      const { error: ingredientError } = await client.from('recipe_ingredients').insert(
+        args.ingredients.map((item: any, index: number) => ({
+          recipe_id: created.id,
+          name: item.name.trim(),
+          quantity: item.quantity,
+          unit: item.unit,
+          calories: item.calories,
+          protein_grams: item.proteinGrams,
+          carbohydrate_grams: item.carbohydrateGrams,
+          fat_grams: item.fatGrams,
+          position: index,
+        })),
+      );
+      if (ingredientError) {
+        // A recipe without ingredients has no macros, so it is worse than none at all.
+        await client.from('recipes').delete().eq('id', created.id);
+        throw ingredientError;
+      }
+      return { ok: true, recipeId: created.id, name: args.name, servings: args.servings, ingredientCount: args.ingredients.length };
     }
     case 'get_active_routine': {
       const routine = dataOrThrow(await client.from('workout_routines')

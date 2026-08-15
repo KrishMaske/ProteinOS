@@ -568,6 +568,98 @@ export type Database = {
         }
         Relationships: []
       }
+      recipe_ingredients: {
+        Row: {
+          calories: number
+          carbohydrate_grams: number
+          fat_grams: number
+          fiber_grams: number | null
+          grams: number | null
+          id: string
+          name: string
+          position: number
+          protein_grams: number
+          quantity: number | null
+          recipe_id: string
+          unit: string | null
+        }
+        Insert: {
+          calories?: number
+          carbohydrate_grams?: number
+          fat_grams?: number
+          fiber_grams?: number | null
+          grams?: number | null
+          id?: string
+          name: string
+          position?: number
+          protein_grams?: number
+          quantity?: number | null
+          recipe_id: string
+          unit?: string | null
+        }
+        Update: {
+          calories?: number
+          carbohydrate_grams?: number
+          fat_grams?: number
+          fiber_grams?: number | null
+          grams?: number | null
+          id?: string
+          name?: string
+          position?: number
+          protein_grams?: number
+          quantity?: number | null
+          recipe_id?: string
+          unit?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recipe_ingredients_recipe_id_fkey"
+            columns: ["recipe_id"]
+            isOneToOne: false
+            referencedRelation: "recipes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recipes: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          image_path: string | null
+          instructions: string | null
+          name: string
+          servings: number
+          source: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_path?: string | null
+          instructions?: string | null
+          name: string
+          servings?: number
+          source?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          image_path?: string | null
+          instructions?: string | null
+          name?: string
+          servings?: number
+          source?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       routine_days: {
         Row: {
           created_at: string
@@ -1356,6 +1448,31 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "workout_sets"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      log_recipe: {
+        Args: {
+          target_logged_date: string
+          target_meal_type: Database["public"]["Enums"]["meal_type"]
+          target_recipe_id: string
+          target_servings?: number
+        }
+        Returns: {
+          created_at: string
+          id: string
+          logged_date: string
+          meal_type: Database["public"]["Enums"]["meal_type"]
+          name: string | null
+          photo_path: string | null
+          source: Database["public"]["Enums"]["food_source"]
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "food_logs"
           isOneToOne: true
           isSetofReturn: false
         }

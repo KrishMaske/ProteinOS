@@ -41,8 +41,9 @@ export default function NutritionScreen() {
       </Card>
 
       <View style={styles.actions}>
-        <Link href="/nutrition/foods" asChild><Button style={styles.growingAction}>Saved foods</Button></Link>
-        <Link href="/nutrition/scan" asChild><Button variant="secondary" style={styles.growingAction}>Food camera</Button></Link>
+        <Link href="/nutrition/scan" asChild><Button style={styles.growingAction}>Food camera</Button></Link>
+        <Link href="/nutrition/recipes" asChild><Button variant="secondary" style={styles.growingAction}>Recipes</Button></Link>
+        <Link href="/nutrition/foods" asChild><Button variant="secondary" style={styles.growingAction}>Saved foods</Button></Link>
         <Link href="/nutrition/log" asChild><Button variant="ghost" style={styles.growingAction}>Enter manually</Button></Link>
       </View>
 
