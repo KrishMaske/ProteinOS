@@ -115,7 +115,7 @@ export default function ActiveWorkoutScreen() {
       () => {
         pendingSaves.current.delete(save);
         if (justCompleted) {
-          const prescription = activeExercise ? workout.prescriptionByExercise[activeExercise.exerciseKey] : null;
+          const prescription = activeExercise ? workout.prescriptionByExercise[activeExercise.exerciseKey] ?? workout.prescriptionByIndex[activeExercise.exercise_index] : null;
           startRestTimer(prescription?.rest_seconds ?? 90);
         }
       },
@@ -249,7 +249,7 @@ export default function ActiveWorkoutScreen() {
             exerciseIndex={activeIndex}
             exerciseCount={orderedExercises.length}
             imperial={imperial}
-            prescription={workout.prescriptionByExercise[activeExercise.exerciseKey]}
+            prescription={workout.prescriptionByExercise[activeExercise.exerciseKey] ?? workout.prescriptionByIndex[activeExercise.exercise_index]}
             previous={workout.previousByExercise[activeExercise.exerciseKey] ?? null}
             addSetPending={add.isPending}
             onAddSet={() => {
@@ -309,6 +309,15 @@ function FocusedExercise({ exercise, exerciseIndex, exerciseCount, imperial, pre
     prescription?.target_rpe ?? null,
     prescription?.target_sets ?? null,
   );
+  // Reads as "3 x 8-12 reps", or just the rep range when the set count is not prescribed.
+  const repRange = prescription?.rep_max
+    ? prescription.rep_min && prescription.rep_min !== prescription.rep_max
+      ? `${prescription.rep_min}–${prescription.rep_max} reps`
+      : `${prescription.rep_max} reps`
+    : null;
+  const targetReps = repRange
+    ? prescription?.target_sets ? `${prescription.target_sets} × ${repRange}` : repRange
+    : null;
   const previousWorkingSets = previous?.sets.filter((set) => set.set_type === 'working') ?? [];
   const representativePrevious = previousWorkingSets.reduce<typeof previousWorkingSets[number] | null>((best, set) => {
     if (!best) return set;
@@ -331,10 +340,19 @@ function FocusedExercise({ exercise, exerciseIndex, exerciseCount, imperial, pre
           </View>
         </View>
 
+        {targetReps ? (
+          <View style={[styles.targetBanner, { backgroundColor: colors.softAccent }]}>
+            <Ionicons name="flag-outline" size={19} color={colors.primary} />
+            <AppText variant="heading" color={colors.primary}>{targetReps}</AppText>
+            {prescription?.target_rir !== null && prescription?.target_rir !== undefined ? (
+              <AppText variant="caption" color={colors.primary}>· leave {prescription.target_rir} in reserve</AppText>
+            ) : null}
+          </View>
+        ) : null}
+
         <View style={styles.exerciseProgress}>
           <View style={styles.exerciseCounts}>
             <AppText variant="caption" color={colors.muted}>{completed}/{sets.length} sets</AppText>
-            {prescription?.rep_max ? <AppText variant="caption" color={colors.muted}>Target {prescription.rep_min ?? prescription.rep_max}–{prescription.rep_max} reps</AppText> : null}
           </View>
           <Link href={{ pathname: '/workout/replace', params: { workoutId, sessionExerciseId: exercise.id } }} asChild>
             <Pressable accessibilityLabel={`Replace ${exercise.exercise.name}`} style={[styles.swapButton, { backgroundColor: colors.raised }]}>
@@ -376,6 +394,7 @@ function FocusedExercise({ exercise, exerciseIndex, exerciseCount, imperial, pre
             onSave={(values, justCompleted) => onSaveSet(set.id, values, justCompleted)}
             previous={representativePrevious ? { weightKg: representativePrevious.weight_kg, reps: representativePrevious.reps } : null}
             restSeconds={prescription?.rest_seconds ?? 90}
+            targetReps={repRange}
             set={set}
           />
         ))}
@@ -478,6 +497,7 @@ const styles = StyleSheet.create({
   exerciseName: { fontSize: 26, lineHeight: 30 },
   swapButton: { minHeight: 44, borderRadius: radius.pill, paddingHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, flexShrink: 0 },
   exerciseProgress: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  targetBanner: { minWidth: 0, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   exerciseCounts: { minWidth: 0, flexShrink: 1, gap: spacing.xs },
   lastTime: { minHeight: 64, borderRadius: radius.md, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   setList: { gap: spacing.sm, width: '100%' },

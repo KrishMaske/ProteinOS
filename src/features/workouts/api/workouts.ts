@@ -9,7 +9,7 @@ export type WorkoutExercise = RawWorkoutExercise & { exercise: ExerciseSummary; 
 export type PreviousPerformanceSet = Pick<WorkoutSet, 'weight_kg' | 'reps' | 'rpe' | 'rir' | 'set_type' | 'completed_at'>;
 export type PreviousPerformance = { started_at: string; sets: PreviousPerformanceSet[] };
 type Prescription = Pick<Tables<'routine_exercises'>, 'target_sets' | 'rep_min' | 'rep_max' | 'target_rir' | 'target_rpe' | 'rest_seconds'>;
-export type ActiveWorkout = Tables<'workout_sessions'> & { workout_session_exercises: WorkoutExercise[]; previousByExercise: Record<string, PreviousPerformance>; prescriptionByExercise: Record<string, Prescription>; preferredUnits: 'metric' | 'imperial' };
+export type ActiveWorkout = Tables<'workout_sessions'> & { workout_session_exercises: WorkoutExercise[]; previousByExercise: Record<string, PreviousPerformance>; prescriptionByExercise: Record<string, Prescription>; prescriptionByIndex: Record<number, Prescription>; preferredUnits: 'metric' | 'imperial' };
 
 async function callWorkoutRpc(name: string, args: Record<string, unknown>) {
   const { data, error } = await supabase.rpc(name as never, args as never);
@@ -50,7 +50,7 @@ export async function getWorkout(id: string): Promise<ActiveWorkout> {
   const exerciseKeys = exercises.map((item) => item.exerciseKey);
   const [history, prescriptions, profile] = await Promise.all([
     exerciseKeys.length ? supabase.from('exercise_history').select('exercise_key,weight_kg,reps,rpe,rir,set_type,completed_at,started_at,workout_session_id').in('exercise_key', exerciseKeys).lt('started_at', data.started_at).order('started_at', { ascending: false }).limit(Math.min(500, Math.max(80, exerciseKeys.length * 24))) : Promise.resolve({ data: [], error: null }),
-    data.routine_day_id ? supabase.from('routine_exercises').select('exercise_id,custom_exercise_id,target_sets,rep_min,rep_max,target_rir,target_rpe,rest_seconds').eq('routine_day_id', data.routine_day_id) : Promise.resolve({ data: [], error: null }),
+    data.routine_day_id ? supabase.from('routine_exercises').select('exercise_id,custom_exercise_id,exercise_index,target_sets,rep_min,rep_max,target_rir,target_rpe,rest_seconds').eq('routine_day_id', data.routine_day_id) : Promise.resolve({ data: [], error: null }),
     supabase.from('profiles').select('preferred_units').single(),
   ]);
   if (history.error) throw history.error; if (prescriptions.error) throw prescriptions.error; if (profile.error) throw profile.error;
@@ -66,7 +66,10 @@ export async function getWorkout(id: string): Promise<ActiveWorkout> {
     previousByExercise[row.exercise_key] = performance;
   }
   const prescriptionByExercise = Object.fromEntries((prescriptions.data ?? []).map((row) => [exerciseKeyFromReference(row), row]));
-  return { ...data, workout_session_exercises: exercises, previousByExercise, prescriptionByExercise, preferredUnits: profile.data.preferred_units as 'metric' | 'imperial' } as ActiveWorkout;
+  // Swapping an exercise repoints the session row but not the routine, so the key lookup
+  // misses and the targets vanish mid-workout. Position still lines up, so it stands in.
+  const prescriptionByIndex = Object.fromEntries((prescriptions.data ?? []).map((row) => [row.exercise_index, row]));
+  return { ...data, workout_session_exercises: exercises, previousByExercise, prescriptionByExercise, prescriptionByIndex, preferredUnits: profile.data.preferred_units as 'metric' | 'imperial' } as ActiveWorkout;
 }
 
 export async function updateWorkoutSet(id: string, values: Partial<Pick<WorkoutSet, 'weight_kg' | 'reps' | 'duration_seconds' | 'rpe' | 'rir' | 'completed_at' | 'set_type'>>) { const { error } = await supabase.from('workout_sets').update(values).eq('id', id); if (error) throw error; }

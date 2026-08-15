@@ -22,6 +22,8 @@ type WorkoutSetEditorProps = {
   onSave: (values: Partial<WorkoutSet>, justCompleted?: boolean) => Promise<unknown>;
   onRemove: () => void;
   onSkip: (skipped: boolean) => void;
+  /** Prescribed rep range, shown against the reps control while logging. */
+  targetReps?: string | null;
 };
 
 const setTypes = ['warmup', 'working', 'failure', 'drop'] as const;
@@ -42,7 +44,7 @@ function fieldsFromServer(set: WorkoutSet, imperial: boolean): SetEntryFields {
   };
 }
 
-export function WorkoutSetEditor({ set, imperial, isCurrent, previous, restSeconds, onSave, onRemove, onSkip }: WorkoutSetEditorProps) {
+export function WorkoutSetEditor({ set, imperial, isCurrent, previous, restSeconds, onSave, onRemove, onSkip, targetReps }: WorkoutSetEditorProps) {
   const { colors } = useAppTheme();
   const pendingDraft = useActiveWorkoutStore((state) => state.pendingSetEdits[set.id]);
   const editSet = useActiveWorkoutStore((state) => state.editSet);
@@ -223,7 +225,7 @@ export function WorkoutSetEditor({ set, imperial, isCurrent, previous, restSecon
         decimal
       />
       <NumericControl
-        label="Reps"
+        label={targetReps ? `Reps · target ${targetReps}` : 'Reps'}
         value={fields.reps}
         decrement={() => step('reps', -1)}
         increment={() => step('reps', 1)}
