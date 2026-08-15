@@ -1,4 +1,5 @@
 import { ageFromBirthDate, calculateNutritionTargets, summarizeWeightTrend } from '@/features/nutrition/services/nutrition-targets';
+import { estimateBodyFat } from '@/features/progress/services/body-composition';
 import { localDateKey } from '@/lib/date';
 import { supabase } from '@/lib/supabase/client';
 import type { Database, TablesUpdate } from '@/types/database';
@@ -9,17 +10,20 @@ const TREND_WINDOW_DAYS = 28;
 export async function getSettings() {
   const today = localDateKey();
   const windowStart = new Date(Date.now() - TREND_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-  const [profile, goal, latestWeight, weights, target, intake] = await Promise.all([
-    supabase.from('profiles').select('display_name,preferred_units,delete_food_photo_after_analysis,training_days_per_week,preferred_session_minutes,birth_date,height_cm,biological_sex,target_weight_kg').single(),
+  const [profile, goal, latestWeight, weights, latestWaist, target, intake] = await Promise.all([
+    supabase.from('profiles').select('display_name,preferred_units,delete_food_photo_after_analysis,training_days_per_week,preferred_session_minutes,birth_date,height_cm,biological_sex,target_weight_kg,goal_body_fat_min,goal_body_fat_max').single(),
     supabase.from('fitness_goals').select('goal_type,notes').eq('is_active', true).maybeSingle(),
     // Deliberately unbounded: someone who last weighed in months ago still has a weight,
     // and the trend window below must not decide whether targets can be derived at all.
     supabase.from('body_metrics').select('weight_kg,measured_at').not('weight_kg', 'is', null).order('measured_at', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('body_metrics').select('weight_kg,measured_at').not('weight_kg', 'is', null).gte('measured_at', windowStart.toISOString()).order('measured_at', { ascending: false }),
+    // Newest row carrying a waist or a measured body fat, so composition can be estimated
+    // even when the latest weigh-in had neither.
+    supabase.from('body_metrics').select('waist_cm,body_fat_percent,measured_at').or('waist_cm.not.is.null,body_fat_percent.not.is.null').order('measured_at', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('nutrition_targets').select('*').lte('effective_from', today).order('effective_from', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('daily_nutrition_totals').select('logged_date,calories').gte('logged_date', localDateKey(windowStart)).lt('logged_date', today),
   ]);
-  for (const result of [profile, goal, latestWeight, weights, target, intake]) if (result.error) throw result.error;
+  for (const result of [profile, goal, latestWeight, weights, latestWaist, target, intake]) if (result.error) throw result.error;
   if (!profile.data) throw new Error('Profile not found');
 
   const recentWeights = weights.data ?? [];
@@ -28,6 +32,7 @@ export async function getSettings() {
     profile: profile.data,
     goal: goal.data,
     latestWeight: latestWeight.data,
+    latestWaist: latestWaist.data,
     target: target.data,
     trend: summarizeWeightTrend(
       recentWeights.map((row) => ({ measuredAt: row.measured_at, weightKg: Number(row.weight_kg) })),
@@ -49,21 +54,38 @@ type SettingsData = Awaited<ReturnType<typeof getSettings>>;
  * intake, goal weight, height, age, sex, and training volume — into the calculator.
  * Returns null only when a required input is missing entirely.
  */
-export function estimateTargetsFromSettings({ profile, goal, latestWeight, trend, intake }: SettingsData) {
+export function estimateTargetsFromSettings({ profile, goal, latestWeight, latestWaist, trend, intake }: SettingsData) {
   const weightKg = latestWeight?.weight_kg === null || latestWeight?.weight_kg === undefined ? null : Number(latestWeight.weight_kg);
   const heightCm = profile.height_cm === null ? null : Number(profile.height_cm);
   if (!weightKg || !heightCm || !profile.birth_date) return null;
+  const age = ageFromBirthDate(profile.birth_date);
+  const bodyFat = estimateBodyFat({
+    weightKg,
+    heightCm,
+    age,
+    biologicalSex: profile.biological_sex,
+    waistCm: latestWaist?.waist_cm === null || latestWaist?.waist_cm === undefined ? null : Number(latestWaist.waist_cm),
+    measuredBodyFatPercent: latestWaist?.body_fat_percent === null || latestWaist?.body_fat_percent === undefined ? null : Number(latestWaist.body_fat_percent),
+  });
   return calculateNutritionTargets({
     weightKg,
     heightCm,
-    age: ageFromBirthDate(profile.birth_date),
+    age,
     biologicalSex: profile.biological_sex,
     trainingDaysPerWeek: profile.training_days_per_week,
     goalType: goal?.goal_type ?? null,
     targetWeightKg: profile.target_weight_kg === null ? null : Number(profile.target_weight_kg),
+    bodyFatPercent: bodyFat?.percent ?? null,
+    goalBodyFat: goalBodyFatBand(profile),
     trend,
     intake,
   });
+}
+
+/** Both bounds are written together, so either being null means no band is set. */
+export function goalBodyFatBand(profile: { goal_body_fat_min: number | null; goal_body_fat_max: number | null }) {
+  const { goal_body_fat_min: min, goal_body_fat_max: max } = profile;
+  return min === null || max === null ? null : { min: Number(min), max: Number(max) };
 }
 
 export type BodyMeasurements = {

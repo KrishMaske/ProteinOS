@@ -209,12 +209,21 @@ async function createRoutineDraft(client: SupabaseClient, userId: string, args: 
 export async function executeCoachTool(client: SupabaseClient, userId: string, name: string, args: any) {
   switch (name) {
     case 'get_user_profile': {
-      const [profile, goal, target] = await Promise.all([
+      const [profile, goal, target, metrics] = await Promise.all([
         client.from('profiles').select('*').eq('id', userId).maybeSingle(),
         client.from('fitness_goals').select('*').eq('is_active', true).maybeSingle(),
         args.includeNutritionTarget ? client.from('nutrition_targets').select('*').order('effective_from', { ascending: false }).limit(1).maybeSingle() : Promise.resolve({ data: null, error: null }),
+        // The profile carries goal_body_fat_min/max; without the latest readings the model
+        // can see the target but not the gap to it.
+        client.from('body_metrics').select('measured_at,weight_kg,waist_cm,body_fat_percent')
+          .eq('user_id', userId).order('measured_at', { ascending: false }).limit(5),
       ]);
-      return { profile: dataOrThrow(profile), activeGoal: dataOrThrow(goal), nutritionTarget: dataOrThrow(target) };
+      return {
+        profile: dataOrThrow(profile),
+        activeGoal: dataOrThrow(goal),
+        nutritionTarget: dataOrThrow(target),
+        recentBodyMetrics: dataOrThrow(metrics),
+      };
     }
     case 'propose_goal_update': {
       const current = dataOrThrow(await client.from('fitness_goals')

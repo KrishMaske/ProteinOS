@@ -21,6 +21,9 @@ export type TargetInputs = {
   trainingDaysPerWeek?: number | null;
   goalType?: GoalType | null;
   targetWeightKg?: number | null;
+  /** Current estimated body fat, used with `goalBodyFat` to taper the adjustment. */
+  bodyFatPercent?: number | null;
+  goalBodyFat?: { min: number; max: number } | null;
   trend?: WeightTrend | null;
   intake?: IntakeSummary | null;
 };
@@ -161,6 +164,28 @@ export function goalAdjustmentScale(weightKg: number, targetWeightKg: number | n
   return clamp(Math.abs(gap) / weightKg / GOAL_TAPER_FRACTION, 0, 1);
 }
 
+/** Points of body fat from the goal band within which the deficit or surplus eases off. */
+const BODY_FAT_TAPER_POINTS = 3;
+
+/**
+ * The body-fat equivalent of the goal-weight taper. Being inside the target band means
+ * hold at maintenance whichever way the goal points, because the band *is* the goal;
+ * outside it, the adjustment eases in over the last few points.
+ */
+export function bodyFatAdjustmentScale(
+  bodyFatPercent: number | null | undefined,
+  goalBand: { min: number; max: number } | null | undefined,
+  adjustment: number,
+) {
+  const current = typeof bodyFatPercent === 'number' && Number.isFinite(bodyFatPercent) ? bodyFatPercent : null;
+  if (!goalBand || adjustment === 0 || current === null) return 1;
+  if (current >= goalBand.min && current <= goalBand.max) return 0;
+  // Negative when above the band (wants a deficit), positive when below (wants a surplus).
+  const gap = current > goalBand.max ? goalBand.max - current : goalBand.min - current;
+  if (Math.sign(gap) !== Math.sign(adjustment)) return 1;
+  return clamp(Math.abs(gap) / BODY_FAT_TAPER_POINTS, 0, 1);
+}
+
 /**
  * Derives a full macro target from body composition inputs. Protein is set from
  * bodyweight and fat from a share of calories, then carbohydrates take whatever
@@ -183,7 +208,12 @@ export function calculateNutritionTargets(inputs: TargetInputs): NutritionTarget
 
   const goal = inputs.goalType ?? 'maintenance';
   const baseAdjustment = GOAL_CALORIE_ADJUSTMENT[goal];
-  const scale = goalAdjustmentScale(weightKg, inputs.targetWeightKg, baseAdjustment);
+  // Two independent read-outs of "how far from goal am I". Take the gentler of the two so
+  // hitting either one eases the adjustment rather than one overriding the other.
+  const scale = Math.min(
+    goalAdjustmentScale(weightKg, inputs.targetWeightKg, baseAdjustment),
+    bodyFatAdjustmentScale(inputs.bodyFatPercent, inputs.goalBodyFat, baseAdjustment),
+  );
   const adjusted = maintenance * (1 + baseAdjustment * scale);
   // Never prescribe a deficit that dips under resting expenditure.
   const calories = Math.round(Math.max(adjusted, bmr, ABSOLUTE_MIN_CALORIES));

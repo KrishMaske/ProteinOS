@@ -473,6 +473,8 @@ export type Database = {
           diet_preference: string | null
           display_name: string | null
           exercises_to_avoid: string[]
+          goal_body_fat_max: number | null
+          goal_body_fat_min: number | null
           height_cm: number | null
           id: string
           onboarding_completed_at: string | null
@@ -494,6 +496,8 @@ export type Database = {
           diet_preference?: string | null
           display_name?: string | null
           exercises_to_avoid?: string[]
+          goal_body_fat_max?: number | null
+          goal_body_fat_min?: number | null
           height_cm?: number | null
           id: string
           onboarding_completed_at?: string | null
@@ -515,6 +519,8 @@ export type Database = {
           diet_preference?: string | null
           display_name?: string | null
           exercises_to_avoid?: string[]
+          goal_body_fat_max?: number | null
+          goal_body_fat_min?: number | null
           height_cm?: number | null
           id?: string
           onboarding_completed_at?: string | null

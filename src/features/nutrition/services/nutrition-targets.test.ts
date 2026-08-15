@@ -5,6 +5,7 @@ import {
   ageFromBirthDate,
   basalMetabolicRate,
   calculateNutritionTargets,
+  bodyFatAdjustmentScale,
   goalAdjustmentScale,
   maintenanceCalories,
   observedMaintenanceCalories,
@@ -263,5 +264,83 @@ describe('ageFromBirthDate', () => {
     expect(ageFromBirthDate('1996-08-20', new Date('2026-08-14T12:00:00'))).toBe(29);
     expect(ageFromBirthDate('1996-08-14', new Date('2026-08-14T12:00:00'))).toBe(30);
     expect(ageFromBirthDate('1996-01-02', new Date('2026-08-14T12:00:00'))).toBe(30);
+  });
+});
+
+describe('bodyFatAdjustmentScale', () => {
+  const band = { min: 12, max: 18 };
+
+  it('holds at maintenance once inside the goal band', () => {
+    expect(bodyFatAdjustmentScale(15, band, -0.2)).toBe(0);
+    expect(bodyFatAdjustmentScale(12, band, -0.2)).toBe(0);
+    expect(bodyFatAdjustmentScale(18, band, 0.1)).toBe(0);
+  });
+
+  it('applies the full deficit while well above the band', () => {
+    expect(bodyFatAdjustmentScale(30, band, -0.2)).toBe(1);
+  });
+
+  it('eases the deficit in over the last few points', () => {
+    expect(bodyFatAdjustmentScale(19, band, -0.2)).toBeCloseTo(1 / 3, 5);
+    expect(bodyFatAdjustmentScale(20, band, -0.2)).toBeCloseTo(2 / 3, 5);
+    expect(bodyFatAdjustmentScale(21, band, -0.2)).toBe(1);
+  });
+
+  it('eases a surplus in when below the band', () => {
+    expect(bodyFatAdjustmentScale(11, band, 0.1)).toBeCloseTo(1 / 3, 5);
+    expect(bodyFatAdjustmentScale(5, band, 0.1)).toBe(1);
+  });
+
+  it('does not interfere when the goal points away from the gap', () => {
+    // Above the band but bulking: body fat should not veto the surplus.
+    expect(bodyFatAdjustmentScale(30, band, 0.1)).toBe(1);
+    // Below the band but cutting.
+    expect(bodyFatAdjustmentScale(5, band, -0.2)).toBe(1);
+  });
+
+  it('is inert without a band, a reading, or an adjustment', () => {
+    expect(bodyFatAdjustmentScale(30, null, -0.2)).toBe(1);
+    expect(bodyFatAdjustmentScale(null, band, -0.2)).toBe(1);
+    expect(bodyFatAdjustmentScale(30, band, 0)).toBe(1);
+  });
+});
+
+describe('body fat goal feeding calorie targets', () => {
+  const base: TargetInputs = {
+    weightKg: 80,
+    heightCm: 178,
+    age: 30,
+    biologicalSex: 'male',
+    trainingDaysPerWeek: 4,
+    goalType: 'fat_loss',
+  };
+
+  it('cuts hard while far above the goal band', () => {
+    const far = calculateNutritionTargets({ ...base, bodyFatPercent: 30, goalBodyFat: { min: 12, max: 18 } });
+    expect(far.calories).toBe(Math.round(maintenanceCalories(base) * 0.8));
+  });
+
+  it('stops cutting once inside the goal band', () => {
+    const inside = calculateNutritionTargets({ ...base, bodyFatPercent: 15, goalBodyFat: { min: 12, max: 18 } });
+    expect(inside.calories).toBe(Math.round(maintenanceCalories(base)));
+  });
+
+  it('lands between the two while closing the last points', () => {
+    const near = calculateNutritionTargets({ ...base, bodyFatPercent: 19, goalBodyFat: { min: 12, max: 18 } });
+    const far = calculateNutritionTargets({ ...base, bodyFatPercent: 30, goalBodyFat: { min: 12, max: 18 } });
+    const inside = calculateNutritionTargets({ ...base, bodyFatPercent: 15, goalBodyFat: { min: 12, max: 18 } });
+    expect(near.calories).toBeGreaterThan(far.calories);
+    expect(near.calories).toBeLessThan(inside.calories);
+  });
+
+  it('takes the gentler of the weight and body-fat tapers', () => {
+    // Body fat says hold; goal weight is still far away. The hold wins.
+    const targets = calculateNutritionTargets({
+      ...base,
+      bodyFatPercent: 15,
+      goalBodyFat: { min: 12, max: 18 },
+      targetWeightKg: 65,
+    });
+    expect(targets.goalAdjustmentScale).toBe(0);
   });
 });

@@ -6,7 +6,11 @@ import {
   bodyMassIndex,
   deurenbergBodyFat,
   estimateBodyFat,
+  healthyBodyFatRange,
+  healthyWeightRangeKg,
+  positionInRange,
   relativeFatMass,
+  verdictForRange,
 } from './body-composition';
 
 describe('bodyMassIndex', () => {
@@ -178,5 +182,86 @@ describe('estimateBodyFat', () => {
     const weightLost = 88 - 80;
     const fatLost = before.fatMassKg! - after.fatMassKg!;
     expect(fatLost / weightLost).toBeGreaterThan(0.5);
+  });
+});
+
+describe('healthyWeightRangeKg', () => {
+  it('derives the range from the WHO BMI band', () => {
+    // 1.78^2 = 3.1684 -> 18.5*3.1684 = 58.6, 24.9*3.1684 = 78.9
+    expect(healthyWeightRangeKg(178)).toEqual({ minKg: 58.6, maxKg: 78.9 });
+  });
+
+  it('scales with the square of height', () => {
+    const short = healthyWeightRangeKg(160)!;
+    const tall = healthyWeightRangeKg(190)!;
+    expect(tall.minKg).toBeGreaterThan(short.minKg);
+    expect(tall.maxKg).toBeGreaterThan(short.maxKg);
+  });
+
+  it('round-trips through BMI', () => {
+    const range = healthyWeightRangeKg(178)!;
+    expect(bodyMassIndex(range.minKg, 178)).toBeCloseTo(18.5, 1);
+    expect(bodyMassIndex(range.maxKg, 178)).toBeCloseTo(24.9, 1);
+  });
+
+  it('rejects a missing height', () => {
+    expect(healthyWeightRangeKg(0)).toBeNull();
+  });
+});
+
+describe('healthyBodyFatRange', () => {
+  it('uses the Gallagher bands for men', () => {
+    expect(healthyBodyFatRange(30, 'male')).toMatchObject({ min: 8, max: 19 });
+    expect(healthyBodyFatRange(45, 'male')).toMatchObject({ min: 11, max: 21 });
+    expect(healthyBodyFatRange(65, 'male')).toMatchObject({ min: 13, max: 24 });
+  });
+
+  it('uses higher bands for women at the same age', () => {
+    const male = healthyBodyFatRange(30, 'male');
+    const female = healthyBodyFatRange(30, 'female');
+    expect(female.min).toBeGreaterThan(male.min);
+    expect(female.max).toBeGreaterThan(male.max);
+  });
+
+  it('rises with age rather than holding one band for life', () => {
+    expect(healthyBodyFatRange(65, 'female').min).toBeGreaterThan(healthyBodyFatRange(25, 'female').min);
+  });
+
+  it('takes the midpoint of both sexes when unstated', () => {
+    const male = healthyBodyFatRange(30, 'male');
+    const female = healthyBodyFatRange(30, 'female');
+    const neutral = healthyBodyFatRange(30, null);
+    expect(neutral.min).toBe((male.min + female.min) / 2);
+    expect(neutral.max).toBe((male.max + female.max) / 2);
+  });
+
+  it('assumes 30 when no age is on record', () => {
+    expect(healthyBodyFatRange(null, 'male')).toMatchObject(healthyBodyFatRange(30, 'male'));
+  });
+});
+
+describe('positionInRange', () => {
+  it('maps the band onto 0..1', () => {
+    expect(positionInRange(8, 8, 19)).toBe(0);
+    expect(positionInRange(19, 8, 19)).toBe(1);
+    expect(positionInRange(13.5, 8, 19)).toBeCloseTo(0.5, 2);
+  });
+
+  it('clamps outside the band so a gauge cannot overflow', () => {
+    expect(positionInRange(2, 8, 19)).toBe(0);
+    expect(positionInRange(40, 8, 19)).toBe(1);
+  });
+
+  it('is safe on a degenerate band', () => {
+    expect(positionInRange(10, 20, 20)).toBe(0);
+  });
+});
+
+describe('verdictForRange', () => {
+  it('classifies against the band edges inclusively', () => {
+    expect(verdictForRange(7, 8, 19)).toBe('below');
+    expect(verdictForRange(8, 8, 19)).toBe('within');
+    expect(verdictForRange(19, 8, 19)).toBe('within');
+    expect(verdictForRange(20, 8, 19)).toBe('above');
   });
 });

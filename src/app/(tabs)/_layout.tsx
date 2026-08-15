@@ -1,15 +1,20 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Redirect, Tabs } from 'expo-router';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Redirect } from 'expo-router';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { Platform } from 'react-native';
 
 import { ErrorState, LoadingState, Screen } from '@/components/ui';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { useAuth } from '@/providers/auth-provider';
 
-const icons = { today: 'today-outline', workouts: 'barbell-outline', nutrition: 'restaurant-outline', progress: 'trending-up-outline' } as const;
+/**
+ * A translucent wash rather than a solid fill: the native bar composites this over the
+ * blur, so the brown reads as a tint on the glass instead of hiding it. Light mode gets
+ * the paper tone, dark mode the ink tone, both at low alpha.
+ */
+const GLASS_TINT = { light: 'rgba(234, 217, 199, 0.35)', dark: 'rgba(51, 38, 27, 0.45)' };
 
 export default function TabsLayout() {
-  const { colors } = useAppTheme();
+  const { colors, isDark } = useAppTheme();
   const { isLoading, isOnboarded, profileError, refreshProfile, user } = useAuth();
   if (isLoading) return <Screen scroll={false}><LoadingState label="Loading your profile…" /></Screen>;
   if (!user) return <Redirect href="/(auth)/login" />;
@@ -19,36 +24,35 @@ export default function TabsLayout() {
   if (!isOnboarded) return <Redirect href="/onboarding" />;
 
   return (
-    <Tabs screenOptions={({ route }) => ({
-      headerShown: false,
-      tabBarHideOnKeyboard: true,
-      tabBarStyle: {
-        backgroundColor: colors.surface,
-        borderTopWidth: 0,
-        height: Platform.OS === 'ios' ? 82 : 68,
-        paddingTop: 8,
-        paddingBottom: Platform.OS === 'ios' ? 20 : 8,
-        elevation: 0,
-      },
-      tabBarItemStyle: { minWidth: 0 },
-      tabBarLabelStyle: { fontSize: 11, fontWeight: '800', marginTop: 2 },
-      tabBarActiveTintColor: colors.primary,
-      tabBarInactiveTintColor: colors.muted,
-      tabBarIcon: ({ color, focused }) => (
-        <View style={[styles.iconWrap, focused && { backgroundColor: colors.softAccent }]}>
-          <Ionicons name={icons[route.name as keyof typeof icons] ?? 'ellipse-outline'} color={color} size={22} />
-        </View>
-      ),
-    })}>
-      <Tabs.Screen name="today" options={{ title: 'Today', tabBarAccessibilityLabel: 'Today dashboard' }} />
-      <Tabs.Screen name="workouts" options={{ title: 'Train', tabBarAccessibilityLabel: 'Training and routines' }} />
-      <Tabs.Screen name="nutrition" options={{ title: 'Nutrition', tabBarAccessibilityLabel: 'Nutrition log' }} />
-      <Tabs.Screen name="progress" options={{ title: 'Progress', tabBarAccessibilityLabel: 'Progress tracking' }} />
-      <Tabs.Screen name="coach" options={{ href: null }} />
-    </Tabs>
+    <NativeTabs
+      // systemChromeMaterial is the material UIKit uses for bars, so on iOS 26 this is
+      // the real Liquid Glass rather than a blur imitation.
+      blurEffect={isDark ? 'systemChromeMaterialDark' : 'systemChromeMaterialLight'}
+      backgroundColor={isDark ? GLASS_TINT.dark : GLASS_TINT.light}
+      tintColor={colors.primary}
+      iconColor={colors.muted}
+      // Android has no glass, so it needs the ripple and indicator tinted instead.
+      rippleColor={Platform.OS === 'android' ? colors.softAccent : undefined}
+      indicatorColor={Platform.OS === 'android' ? colors.softAccent : undefined}
+      labelStyle={{ fontSize: 11, fontWeight: '800' }}
+    >
+      <NativeTabs.Trigger name="today">
+        <NativeTabs.Trigger.Icon sf={{ default: 'calendar', selected: 'calendar' }} md="today" />
+        <NativeTabs.Trigger.Label>Today</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="workouts">
+        <NativeTabs.Trigger.Icon sf={{ default: 'dumbbell', selected: 'dumbbell.fill' }} md="fitness_center" />
+        <NativeTabs.Trigger.Label>Train</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="nutrition">
+        <NativeTabs.Trigger.Icon sf={{ default: 'fork.knife', selected: 'fork.knife' }} md="restaurant" />
+        <NativeTabs.Trigger.Label>Nutrition</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="progress">
+        <NativeTabs.Trigger.Icon sf={{ default: 'chart.line.uptrend.xyaxis', selected: 'chart.line.uptrend.xyaxis' }} md="trending_up" />
+        <NativeTabs.Trigger.Label>Progress</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="coach" hidden />
+    </NativeTabs>
   );
 }
-
-const styles = StyleSheet.create({
-  iconWrap: { width: 42, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-});

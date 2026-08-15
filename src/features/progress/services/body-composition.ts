@@ -70,6 +70,31 @@ const BODY_FAT_BANDS: Record<BiologicalSex, { max: number; category: BodyFatCate
   ],
 };
 
+/** WHO healthy adult BMI band, used for both the gauge and the healthy weight range. */
+export const HEALTHY_BMI = { min: 18.5, max: 24.9 } as const;
+
+/**
+ * Healthy body-fat bands by age and sex (Gallagher et al., 2000). Body fat rises with age
+ * at a constant health risk, so a single band across all ages would mislabel older adults.
+ */
+const HEALTHY_BODY_FAT: Record<BiologicalSex, { maxAge: number; min: number; max: number }[]> = {
+  male: [
+    { maxAge: 39, min: 8, max: 19 },
+    { maxAge: 59, min: 11, max: 21 },
+    { maxAge: Infinity, min: 13, max: 24 },
+  ],
+  female: [
+    { maxAge: 39, min: 21, max: 32 },
+    { maxAge: 59, min: 23, max: 33 },
+    { maxAge: Infinity, min: 24, max: 35 },
+  ],
+  unspecified: [
+    { maxAge: 39, min: 14.5, max: 25.5 },
+    { maxAge: 59, min: 17, max: 27 },
+    { maxAge: Infinity, min: 18.5, max: 29.5 },
+  ],
+};
+
 function round(value: number, places = 1) {
   const factor = 10 ** places;
   return Math.round(value * factor) / factor;
@@ -151,4 +176,38 @@ export function estimateBodyFat(inputs: BodyCompositionInputs): BodyFatEstimate 
     fatMassKg,
     leanMassKg: fatMassKg === null ? null : round(weightKg - fatMassKg),
   };
+}
+
+/** The weight range that puts this height inside the healthy BMI band. */
+export function healthyWeightRangeKg(heightCm: number) {
+  if (!isPositive(heightCm)) return null;
+  const heightM = heightCm / 100;
+  return {
+    minKg: round(HEALTHY_BMI.min * heightM * heightM),
+    maxKg: round(HEALTHY_BMI.max * heightM * heightM),
+  };
+}
+
+/** Age- and sex-adjusted healthy body-fat band. Assumes 30 when no age is on record. */
+export function healthyBodyFatRange(age?: number | null, biologicalSex?: BiologicalSex | null) {
+  const bands = HEALTHY_BODY_FAT[biologicalSex ?? 'unspecified'];
+  const effectiveAge = isPositive(age) ? age : 30;
+  return bands.find((entry) => effectiveAge <= entry.maxAge)!;
+}
+
+/**
+ * Where a value sits inside a band, as a fraction: 0 at the floor, 1 at the ceiling,
+ * clamped outside so an extreme reading cannot overflow a gauge.
+ */
+export function positionInRange(value: number, min: number, max: number) {
+  if (max <= min) return 0;
+  return Math.min(1, Math.max(0, (value - min) / (max - min)));
+}
+
+export type RangeVerdict = 'below' | 'within' | 'above';
+
+export function verdictForRange(value: number, min: number, max: number): RangeVerdict {
+  if (value < min) return 'below';
+  if (value > max) return 'above';
+  return 'within';
 }

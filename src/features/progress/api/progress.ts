@@ -11,7 +11,7 @@ export async function getProgressDashboard() {
     supabase.from('body_metrics').select('*').order('measured_at', { ascending: true }).limit(180),
     supabase.from('weekly_workout_summary').select('*').order('week_start', { ascending: true }).limit(26),
     supabase.from('personal_bests').select('*').order('estimated_one_rep_max', { ascending: false }).limit(8),
-    supabase.from('profiles').select('preferred_units,height_cm,birth_date,biological_sex').single(),
+    supabase.from('profiles').select('preferred_units,height_cm,birth_date,biological_sex,target_weight_kg,goal_body_fat_min,goal_body_fat_max').single(),
     supabase.from('daily_nutrition_totals').select('logged_date,protein_grams').order('logged_date', { ascending: false }).limit(30),
     supabase.from('nutrition_targets').select('protein_grams').order('effective_from', { ascending: false }).limit(1).maybeSingle(),
   ]);
