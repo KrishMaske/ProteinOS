@@ -1,10 +1,5 @@
 import { Redirect } from 'expo-router';
-// expo-router 6 exposes Icon and Label as standalone elements; SDK 57 nests them under
-// NativeTabs.Trigger. Importing them directly works on both.
-//
-// SF Symbols render on iOS in both SDKs. SDK 57 also accepts md="<material-icon>" for
-// Android, which expo-router 6 does not; add those back when upgrading if Android matters.
-import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { Platform } from 'react-native';
 
 import { ErrorState, LoadingState, Screen } from '@/components/ui';
@@ -42,20 +37,20 @@ export default function TabsLayout() {
       labelStyle={{ fontSize: 11, fontWeight: '800' }}
     >
       <NativeTabs.Trigger name="today">
-        <Icon sf={{ default: 'calendar', selected: 'calendar' }} />
-        <Label>Today</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'calendar', selected: 'calendar' }} md="today" />
+        <NativeTabs.Trigger.Label>Today</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="workouts">
-        <Icon sf={{ default: 'dumbbell', selected: 'dumbbell.fill' }} />
-        <Label>Train</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'dumbbell', selected: 'dumbbell.fill' }} md="fitness_center" />
+        <NativeTabs.Trigger.Label>Train</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="nutrition">
-        <Icon sf={{ default: 'fork.knife', selected: 'fork.knife' }} />
-        <Label>Nutrition</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'fork.knife', selected: 'fork.knife' }} md="restaurant" />
+        <NativeTabs.Trigger.Label>Nutrition</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="progress">
-        <Icon sf={{ default: 'chart.line.uptrend.xyaxis', selected: 'chart.line.uptrend.xyaxis' }} />
-        <Label>Progress</Label>
+        <NativeTabs.Trigger.Icon sf={{ default: 'chart.line.uptrend.xyaxis', selected: 'chart.line.uptrend.xyaxis' }} md="trending_up" />
+        <NativeTabs.Trigger.Label>Progress</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="coach" hidden />
     </NativeTabs>
