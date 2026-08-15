@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Link, type Href } from 'expo-router';
 import { useState, type ComponentProps, type PropsWithChildren, type ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -149,22 +148,7 @@ export function Field({ containerStyle, label, error, hideLabel, ...props }: Com
   );
 }
 
-/**
- * Pass `href` and the title itself becomes the link, rather than a separate word beside
- * it. `action` stays for headers whose control is not navigation.
- */
-export function SectionHeader({ title, action, href }: { title: string; action?: ReactNode; href?: Href }) {
-  const { colors } = useAppTheme();
-  if (href) {
-    return (
-      <Link href={href} asChild>
-        <Pressable accessibilityRole="link" accessibilityLabel={`Open ${title}`} style={({ pressed }) => [styles.sectionHeader, { opacity: pressed ? 0.6 : 1 }]}>
-          <AppText variant="heading" style={styles.sectionTitle}>{title}</AppText>
-          <Ionicons name="chevron-forward" size={20} color={colors.muted} />
-        </Pressable>
-      </Link>
-    );
-  }
+export function SectionHeader({ title, action }: { title: string; action?: ReactNode }) {
   return <View style={styles.sectionHeader}><AppText variant="heading" style={styles.sectionTitle}>{title}</AppText>{action ? <View style={styles.sectionAction}>{action}</View> : null}</View>;
 }
 

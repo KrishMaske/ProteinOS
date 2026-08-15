@@ -107,11 +107,14 @@ function RecipeShortcuts({ mealType }: { mealType: Database['public']['Enums']['
   if (query.isLoading || !query.data?.length) {
     return (
       <View style={styles.mealSection}>
-        <SectionHeader title="Recipes" href="/nutrition/recipes" />
+        <SectionHeader title="Recipes" />
         {query.isLoading ? null : (
-          <AppText variant="caption" color={colors.muted}>
-            Save something you cook and it is one tap to log from here.
-          </AppText>
+          <>
+            <AppText variant="caption" color={colors.muted}>
+              Save something you cook and logging a serving is one tap from here.
+            </AppText>
+            <Link href="/nutrition/recipes" asChild><Button variant="secondary">Add a recipe</Button></Link>
+          </>
         )}
       </View>
     );
@@ -119,7 +122,7 @@ function RecipeShortcuts({ mealType }: { mealType: Database['public']['Enums']['
 
   return (
     <View style={styles.mealSection}>
-      <SectionHeader title="Recipes" href="/nutrition/recipes" />
+      <SectionHeader title="Recipes" />
       <View style={styles.cardList}>
         {recipes.map((recipe) => {
           const each = perServing(recipeTotals(recipe.recipe_ingredients), Number(recipe.servings));
@@ -154,6 +157,11 @@ function RecipeShortcuts({ mealType }: { mealType: Database['public']['Enums']['
           );
         })}
       </View>
+      <Link href="/nutrition/recipes" asChild>
+        <Button variant="secondary">
+          {query.data.length > 3 ? `All ${query.data.length} recipes` : 'Manage recipes'}
+        </Button>
+      </Link>
       {log.error ? <AppText variant="caption" color={colors.danger}>{log.error.message}</AppText> : null}
     </View>
   );
