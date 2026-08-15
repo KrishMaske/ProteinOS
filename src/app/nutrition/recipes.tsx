@@ -109,6 +109,10 @@ export default function RecipesScreen() {
   );
 }
 
+/**
+ * Tapping the row logs a serving, matching saved foods. The recipe itself - ingredients,
+ * method, photo, editing and deleting - is behind the info control.
+ */
 function RecipeRow({ recipe, logged, pending, onLog }: {
   recipe: RecipeWithIngredients;
   logged: boolean;
@@ -120,28 +124,31 @@ function RecipeRow({ recipe, logged, pending, onLog }: {
 
   return (
     <View style={[styles.recipeRow, { backgroundColor: colors.surface, borderColor: colors.line }]}>
-      <Link href={`/nutrition/recipe/${recipe.id}` as Href} asChild>
-        <Pressable accessibilityLabel={`Open ${recipe.name}`} style={({ pressed }) => [styles.recipeCopy, { opacity: pressed ? 0.65 : 1 }]}>
-          <RecipeImage path={recipe.image_path} />
-          <View style={styles.flex}>
-            <AppText variant="heading" numberOfLines={1}>{recipe.name}</AppText>
-            <AppText variant="caption" color={colors.muted} numberOfLines={1}>
-              {Math.round(each.calories)} kcal · {Math.round(each.proteinGrams)}g protein per serving
-            </AppText>
-            <AppText variant="caption" color={colors.muted} numberOfLines={1}>
-              Makes {Number(recipe.servings)} · {recipe.recipe_ingredients.length} ingredient{recipe.recipe_ingredients.length === 1 ? '' : 's'}
-            </AppText>
-          </View>
-        </Pressable>
-      </Link>
       <Pressable
         accessibilityLabel={`Log one serving of ${recipe.name}`}
+        accessibilityHint="Adds one serving to the selected meal"
         disabled={pending}
         onPress={onLog}
-        style={({ pressed }) => [styles.logButton, { backgroundColor: logged ? colors.raised : colors.primary, opacity: pending ? 0.5 : pressed ? 0.72 : 1 }]}>
-        <Ionicons name={logged ? 'checkmark' : 'add'} size={18} color={logged ? colors.primary : colors.onPrimary} />
-        <AppText variant="caption" color={logged ? colors.primary : colors.onPrimary}>{pending ? 'Saving' : logged ? 'Logged' : 'Log'}</AppText>
+        style={({ pressed }) => [styles.recipeCopy, { opacity: pending ? 0.5 : pressed ? 0.65 : 1 }]}>
+        <RecipeImage path={recipe.image_path} />
+        <View style={styles.flex}>
+          <AppText variant="heading" numberOfLines={1}>{recipe.name}</AppText>
+          <AppText variant="caption" color={logged ? colors.primary : colors.muted} numberOfLines={1}>
+            {logged ? 'Logged one serving' : `${Math.round(each.calories)} kcal · ${Math.round(each.proteinGrams)}g protein per serving`}
+          </AppText>
+          <AppText variant="caption" color={colors.muted} numberOfLines={1}>
+            Makes {Number(recipe.servings)} · {recipe.recipe_ingredients.length} ingredient{recipe.recipe_ingredients.length === 1 ? '' : 's'}
+          </AppText>
+        </View>
       </Pressable>
+      <Link href={`/nutrition/recipe/${recipe.id}` as Href} asChild>
+        <Pressable
+          accessibilityLabel={`View and edit ${recipe.name}`}
+          hitSlop={6}
+          style={({ pressed }) => [styles.detailButton, { opacity: pressed ? 0.5 : 1 }]}>
+          <Ionicons name="information-circle-outline" size={22} color={colors.muted} />
+        </Pressable>
+      </Link>
     </View>
   );
 }
@@ -155,6 +162,6 @@ const styles = StyleSheet.create({
   list: { gap: spacing.sm },
   recipeRow: { minWidth: 0, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.lg, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   recipeCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  logButton: { minHeight: 42, minWidth: 70, flexShrink: 0, paddingHorizontal: spacing.md, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
+  detailButton: { width: 44, height: 44, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1, minWidth: 0, gap: 2 },
 });

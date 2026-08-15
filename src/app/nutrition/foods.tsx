@@ -88,29 +88,41 @@ export default function SavedFoodsScreen() {
   );
 }
 
+/**
+ * The row itself logs the food, since that is what the list is for. Details, editing and
+ * deleting sit behind the info control, which keeps the common action to one tap without
+ * hiding the rest.
+ */
 function SavedFoodRow({ food, logged, pending, onLog }: { food: SavedFood; logged: boolean; pending: boolean; onLog: () => void }) {
   const { colors } = useAppTheme();
   const serving = [food.serving_quantity, food.serving_unit].filter((value) => value !== null && value !== '').join(' ')
     || (food.serving_grams ? `${food.serving_grams} g` : '1 serving');
   return (
     <View style={[styles.foodRow, { backgroundColor: colors.surface, borderColor: colors.line }]}>
-      <Link href={`/nutrition/saved/${food.id}` as Href} asChild>
-        <Pressable accessibilityLabel={`Edit ${food.name}`} style={({ pressed }) => [styles.foodCopy, { opacity: pressed ? 0.65 : 1 }]}>
-          <View style={[styles.foodIcon, { backgroundColor: colors.raised }]}><Ionicons name="restaurant-outline" size={19} color={colors.primary} /></View>
-          <View style={styles.flex}>
-            <AppText variant="heading" numberOfLines={1}>{food.name}</AppText>
-            <AppText variant="caption" color={colors.muted} numberOfLines={1}>{serving} · {Math.round(food.calories)} kcal · {Math.round(food.protein_grams)}g protein</AppText>
-          </View>
-        </Pressable>
-      </Link>
       <Pressable
         accessibilityLabel={`Log ${food.name}`}
+        accessibilityHint="Adds one serving to the selected meal"
         disabled={pending}
         onPress={onLog}
-        style={({ pressed }) => [styles.logButton, { backgroundColor: logged ? colors.raised : colors.primary, opacity: pending ? 0.5 : pressed ? 0.72 : 1 }]}>
-        <Ionicons name={logged ? 'checkmark' : 'add'} size={18} color={logged ? colors.primary : colors.onPrimary} />
-        <AppText variant="caption" color={logged ? colors.primary : colors.onPrimary}>{pending ? 'Saving' : logged ? 'Logged' : 'Log'}</AppText>
+        style={({ pressed }) => [styles.foodCopy, { opacity: pending ? 0.5 : pressed ? 0.65 : 1 }]}>
+        <View style={[styles.foodIcon, { backgroundColor: logged ? colors.primary : colors.raised }]}>
+          <Ionicons name={logged ? 'checkmark' : pending ? 'ellipsis-horizontal' : 'restaurant-outline'} size={19} color={logged ? colors.onPrimary : colors.primary} />
+        </View>
+        <View style={styles.flex}>
+          <AppText variant="heading" numberOfLines={1}>{food.name}</AppText>
+          <AppText variant="caption" color={logged ? colors.primary : colors.muted} numberOfLines={1}>
+            {logged ? 'Logged' : `${serving} · ${Math.round(food.calories)} kcal · ${Math.round(food.protein_grams)}g protein`}
+          </AppText>
+        </View>
       </Pressable>
+      <Link href={`/nutrition/saved/${food.id}` as Href} asChild>
+        <Pressable
+          accessibilityLabel={`View and edit ${food.name}`}
+          hitSlop={6}
+          style={({ pressed }) => [styles.detailButton, { opacity: pressed ? 0.5 : 1 }]}>
+          <Ionicons name="information-circle-outline" size={22} color={colors.muted} />
+        </Pressable>
+      </Link>
     </View>
   );
 }
@@ -139,6 +151,6 @@ const styles = StyleSheet.create({
   foodRow: { minWidth: 0, borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.lg, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   foodCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   foodIcon: { width: 42, height: 42, flexShrink: 0, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  logButton: { minHeight: 42, minWidth: 70, flexShrink: 0, paddingHorizontal: spacing.md, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
+  detailButton: { width: 44, height: 44, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1, minWidth: 0, gap: spacing.xs },
 });

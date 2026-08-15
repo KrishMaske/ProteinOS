@@ -128,29 +128,32 @@ function RecipeShortcuts({ mealType }: { mealType: Database['public']['Enums']['
           const pending = log.isPending && log.variables?.recipeId === recipe.id;
           return (
             <View key={recipe.id} style={[styles.recipeRow, { backgroundColor: colors.surface }]}>
-              <Link href={`/nutrition/recipe/${recipe.id}` as Href} asChild>
-                <Pressable accessibilityLabel={`Open ${recipe.name}`} style={({ pressed }) => [styles.recipeCopy, { opacity: pressed ? 0.65 : 1 }]}>
-                  <RecipeImage path={recipe.image_path} size={44} />
-                  <View style={styles.flex}>
-                    <AppText variant="heading" numberOfLines={1}>{recipe.name}</AppText>
-                    <AppText variant="caption" color={colors.muted} numberOfLines={1}>
-                      {Math.round(each.calories)} kcal · {Math.round(each.proteinGrams)}g protein a serving
-                    </AppText>
-                  </View>
-                </Pressable>
-              </Link>
               <Pressable
                 accessibilityLabel={`Log one serving of ${recipe.name} to ${mealType}`}
+                accessibilityHint="Adds one serving to today"
                 disabled={pending}
                 onPress={() => {
                   setLoggedId(null);
                   log.mutate({ recipeId: recipe.id, date: localDateKey(), mealType, servings: 1 },
                     { onSuccess: () => setLoggedId(recipe.id) });
                 }}
-                style={({ pressed }) => [styles.recipeLog, { backgroundColor: done ? colors.raised : colors.primary, opacity: pending ? 0.5 : pressed ? 0.72 : 1 }]}>
-                <Ionicons name={done ? 'checkmark' : 'add'} size={16} color={done ? colors.primary : colors.onPrimary} />
-                <AppText variant="caption" color={done ? colors.primary : colors.onPrimary}>{pending ? 'Saving' : done ? 'Logged' : 'I had this'}</AppText>
+                style={({ pressed }) => [styles.recipeCopy, { opacity: pending ? 0.5 : pressed ? 0.65 : 1 }]}>
+                <RecipeImage path={recipe.image_path} size={44} />
+                <View style={styles.flex}>
+                  <AppText variant="heading" numberOfLines={1}>{recipe.name}</AppText>
+                  <AppText variant="caption" color={done ? colors.primary : colors.muted} numberOfLines={1}>
+                    {done ? 'Logged one serving' : `${Math.round(each.calories)} kcal · ${Math.round(each.proteinGrams)}g protein a serving`}
+                  </AppText>
+                </View>
               </Pressable>
+              <Link href={`/nutrition/recipe/${recipe.id}` as Href} asChild>
+                <Pressable
+                  accessibilityLabel={`View and edit ${recipe.name}`}
+                  hitSlop={6}
+                  style={({ pressed }) => [styles.detailButton, { opacity: pressed ? 0.5 : 1 }]}>
+                  <Ionicons name="information-circle-outline" size={22} color={colors.muted} />
+                </Pressable>
+              </Link>
             </View>
           );
         })}
@@ -190,7 +193,7 @@ const styles = StyleSheet.create({
   cardList: { minWidth: 0, gap: spacing.sm },
   recipeRow: { minWidth: 0, borderRadius: radius.lg, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   recipeCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  recipeLog: { minHeight: 40, flexShrink: 0, paddingHorizontal: spacing.md, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  detailButton: { width: 44, height: 44, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
   mealSection: { minWidth: 0, gap: spacing.md },
   // Trims the screen's 24pt gap after the logging buttons, so the run into Recipes
   // matches the tighter gap its own button makes with Meals below.
