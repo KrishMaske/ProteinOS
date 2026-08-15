@@ -1,9 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { Link, useLocalSearchParams } from 'expo-router';
 import { useState, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Card, EmptyState, ErrorState, Field, LoadingState, Screen, SectionHeader } from '@/components/ui';
+import { AppText, Button, Card, EmptyState, ErrorState, Field, LoadingState, PressableCard, Screen, SectionHeader } from '@/components/ui';
 import { radius, spacing } from '@/constants/tokens';
 import { ageFromBirthDate, type BiologicalSex } from '@/features/nutrition/services/nutrition-targets';
 import { TrendChart } from '@/features/progress/components/trend-chart';
@@ -188,27 +187,23 @@ function MetricCard({ title, value, valueColor, caption, details, children }: Pr
   const [open, setOpen] = useState(false);
   const shown = details.filter((line): line is string => Boolean(line));
 
+  // The whole card is the target, so no separate toggle control is needed.
   return (
-    <Card>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        accessibilityLabel={`${title} ${value}. ${open ? 'Hide' : 'Show'} details`}
-        onPress={() => setOpen((current) => !current)}
-        style={({ pressed }) => [styles.compositionHeading, { opacity: pressed ? 0.7 : 1 }]}
-      >
+    <PressableCard
+      accessibilityState={{ expanded: open }}
+      accessibilityLabel={`${title} ${value}. ${open ? 'Hide' : 'Show'} details`}
+      onPress={() => setOpen((current) => !current)}
+    >
+      <View style={styles.compositionHeading}>
         <AppText variant="heading">{title}</AppText>
-        <View style={styles.metricValue}>
-          <AppText variant="heading" color={valueColor}>{value}</AppText>
-          <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
-        </View>
-      </Pressable>
+        <AppText variant="heading" color={valueColor}>{value}</AppText>
+      </View>
       {children}
       <AppText variant="caption" color={colors.muted}>{caption}</AppText>
       {open ? shown.map((line) => (
         <AppText key={line} variant="caption" color={colors.muted} style={styles.formula}>{line}</AppText>
       )) : null}
-    </Card>
+    </PressableCard>
   );
 }
 
@@ -248,9 +243,6 @@ function CompositionSegment({ composition, profile, bodyFatSeries, goalBand, imp
 
   return (
     <>
-      <AppText variant="caption" color={colors.muted}>
-        {current.readings === 1 ? 'From 1 log' : `Averaged from ${current.readings} logs`} this week
-      </AppText>
 
       {current.bmi !== null ? (
         <MetricCard
@@ -442,7 +434,6 @@ const styles = StyleSheet.create({
   gaugeLabels: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   goalValue: { fontSize: 32, lineHeight: 36 },
   formula: { fontVariant: ['tabular-nums'] },
-  metricValue: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   modeRow: { flexDirection: 'row', gap: spacing.xs },
   modeOption: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill },
   presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

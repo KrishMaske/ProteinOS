@@ -274,16 +274,11 @@ function DeltaNote({ change, unit }: { change: number | null; unit: string }) {
  * One shared card title so every card on Today reads the same. The title itself is the
  * link, rather than a separate word beside it.
  */
-function CardTitleLink({ title, href, subtitle }: { title: string; href: Parameters<typeof Link>[0]['href']; subtitle?: string }) {
-  const { colors } = useAppTheme();
+function CardTitleLink({ title, href }: { title: string; href: Parameters<typeof Link>[0]['href'] }) {
   return (
     <Link href={href} asChild>
       <Pressable accessibilityRole="link" accessibilityLabel={`Open ${title}`} style={({ pressed }) => [styles.cardTitleRow, { opacity: pressed ? 0.6 : 1 }]}>
-        <View style={styles.flex}>
-          <AppText variant="heading">{title}</AppText>
-          {subtitle ? <AppText variant="caption" color={colors.muted}>{subtitle}</AppText> : null}
-        </View>
-        <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+        <AppText variant="heading" style={styles.flex}>{title}</AppText>
       </Pressable>
     </Link>
   );
@@ -298,7 +293,6 @@ function CompositionCard({ summary, imperial }: { summary: CompositionSummary; i
       <CardTitleLink
         title="Composition"
         href={{ pathname: '/(tabs)/progress', params: { segment: 'composition' } }}
-        subtitle={current.readings === 1 ? 'From 1 log this week' : `Averaged from ${current.readings} logs this week`}
       />
       <View style={styles.compositionRow}>
         {current.bmi !== null ? (
