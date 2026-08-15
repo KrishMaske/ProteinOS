@@ -13,7 +13,7 @@
     "android": {
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
-        "backgroundColor": "#f7e7d6",
+        "backgroundColor": "#f0e0d0",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false
