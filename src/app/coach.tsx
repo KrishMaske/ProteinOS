@@ -165,11 +165,6 @@ export default function CoachScreen() {
     }
   }
 
-  function closeCoach() {
-    if (router.canGoBack()) router.back();
-    else router.replace('/(tabs)/today');
-  }
-
   if (conversationsQuery.isLoading || activeId === undefined) {
     return <Screen safeEdges={['top', 'left', 'right', 'bottom']}><LoadingState label="Loading Coach…" /></Screen>;
   }
@@ -224,7 +219,6 @@ export default function CoachScreen() {
           </View>
           <HeaderNavigationButton accessibilityLabel="Conversation history" icon="time-outline" onPress={() => setHistoryOpen(true)} />
           <HeaderNavigationButton accessibilityLabel="Start a new chat" icon="create-outline" disabled={!activeId || sendMessage.isPending} onPress={startNewChat} />
-          <HeaderNavigationButton mode="close" onPress={closeCoach} />
         </View>
 
         {activeId && conversationQuery.isLoading ? <LoadingState label="Opening conversation…" /> : (
