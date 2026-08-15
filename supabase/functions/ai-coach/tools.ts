@@ -14,6 +14,8 @@ const nullableString = { type: ['string', 'null'] };
 const nullableNumber = { type: ['number', 'null'] };
 const goalTypes = ['recomp', 'fat_loss', 'muscle_gain', 'maintenance', 'strength'] as const;
 const mealTypes = ['breakfast', 'lunch', 'dinner', 'snacks', 'other'] as const;
+/** Strict mode makes the model send every field, so the date arrives as null when unset. */
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
 
 const loggedFoodItem = strictObject({
   name: { type: 'string', minLength: 1, maxLength: 160 },
@@ -232,6 +234,37 @@ const toolInputSchemas: Record<string, z.ZodType> = {
       carbohydrateGrams: z.number().min(0),
       fatGrams: z.number().min(0),
     }).strict()).min(1).max(40),
+  }).strict(),
+  log_food: z.object({
+    mealType: z.enum(mealTypes),
+    name: z.string().trim().min(1).max(160),
+    loggedDate: isoDate,
+    items: z.array(z.object({
+      name: z.string().trim().min(1).max(160),
+      quantity: z.number().min(0).nullable(),
+      unit: nullableText,
+      grams: z.number().min(0).nullable(),
+      calories: z.number().min(0),
+      proteinGrams: z.number().min(0),
+      carbohydrateGrams: z.number().min(0),
+      fatGrams: z.number().min(0),
+      fiberGrams: z.number().min(0).nullable(),
+    }).strict()).min(1).max(20),
+  }).strict(),
+  log_saved_food: z.object({
+    savedFoodId: z.string().min(1),
+    mealType: z.enum(mealTypes),
+    loggedDate: isoDate,
+  }).strict(),
+  log_recipe: z.object({
+    recipeId: z.string().min(1),
+    mealType: z.enum(mealTypes),
+    servings: z.number().min(0.1).max(20),
+    loggedDate: isoDate,
+  }).strict(),
+  get_gym_comparison: z.object({
+    exerciseKey: nullableText,
+    limit: z.number().int().min(1).max(50),
   }).strict(),
   get_active_routine: z.object({ includeExercises: z.boolean() }).strict(),
   search_exercises: z.object({ query: z.string(), bodyPart: nullableText, target: nullableText, equipment: nullableText, limit: z.number().int().min(1).max(20) }).strict(),
