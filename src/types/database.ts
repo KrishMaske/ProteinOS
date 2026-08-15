@@ -1113,6 +1113,7 @@ export type Database = {
           rpe: number | null
           set_index: number
           set_type: Database["public"]["Enums"]["workout_set_type"]
+          skipped_at: string | null
           updated_at: string
           weight_kg: number | null
           workout_session_exercise_id: string
@@ -1127,6 +1128,7 @@ export type Database = {
           rpe?: number | null
           set_index: number
           set_type?: Database["public"]["Enums"]["workout_set_type"]
+          skipped_at?: string | null
           updated_at?: string
           weight_kg?: number | null
           workout_session_exercise_id: string
@@ -1141,6 +1143,7 @@ export type Database = {
           rpe?: number | null
           set_index?: number
           set_type?: Database["public"]["Enums"]["workout_set_type"]
+          skipped_at?: string | null
           updated_at?: string
           weight_kg?: number | null
           workout_session_exercise_id?: string
@@ -1441,6 +1444,7 @@ export type Database = {
           rpe: number | null
           set_index: number
           set_type: Database["public"]["Enums"]["workout_set_type"]
+          skipped_at: string | null
           updated_at: string
           weight_kg: number | null
           workout_session_exercise_id: string
@@ -1579,6 +1583,26 @@ export type Database = {
         SetofOptions: {
           from: "*"
           to: "food_log_items"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      skip_routine_day: {
+        Args: { target_day_id: string }
+        Returns: {
+          created_at: string
+          current_cycle_index: number
+          description: string | null
+          id: string
+          name: string
+          source: string
+          status: Database["public"]["Enums"]["routine_status"]
+          updated_at: string
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "workout_routines"
           isOneToOne: true
           isSetofReturn: false
         }

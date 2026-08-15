@@ -31,7 +31,7 @@ export async function getTodayDashboard(date: string) {
     supabase.from('workout_routines').select('id,name,current_cycle_index,routine_days(id,name,day_index,is_rest_day,routine_exercises(id))').eq('status', 'active').maybeSingle(),
     supabase.from('body_metrics').select('weight_kg,measured_at').not('weight_kg', 'is', null).order('measured_at', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('body_metrics').select('measured_at,weight_kg,waist_cm,body_fat_percent').gte('measured_at', compositionStart).order('measured_at', { ascending: false }),
-    supabase.from('workout_sessions').select('id,name,started_at,routine_day_id,workout_session_exercises(id,exercise_id,custom_exercise_id,exercise_index,exercise_catalog(id,name,target,equipment,image_source,gif_source),custom_exercises(id,name,target,equipment,media_path),workout_sets(id,set_index,set_type,weight_kg,reps,completed_at))').eq('status', 'in_progress').order('started_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('workout_sessions').select('id,name,started_at,routine_day_id,workout_session_exercises(id,exercise_id,custom_exercise_id,exercise_index,exercise_catalog(id,name,target,equipment,image_source,gif_source),custom_exercises(id,name,target,equipment,media_path),workout_sets(id,set_index,set_type,weight_kg,reps,completed_at,skipped_at))').eq('status', 'in_progress').order('started_at', { ascending: false }).limit(1).maybeSingle(),
   ]);
   for (const result of [profile, nutrition, target, routine, latestWeight, recentMetrics, activeSession]) if (result.error) throw result.error;
 

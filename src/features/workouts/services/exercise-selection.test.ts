@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { initialWorkoutExerciseId, resolveWorkoutExercise } from './exercise-selection';
+import { initialWorkoutExerciseId, isSetOutstanding, resolveWorkoutExercise } from './exercise-selection';
 
 describe('active workout exercise selection', () => {
   const exercises = [
@@ -23,5 +23,21 @@ describe('active workout exercise selection', () => {
 
   it('does not silently jump when an explicit exercise is missing', () => {
     expect(resolveWorkoutExercise(exercises, 'removed')).toBeNull();
+  });
+});
+
+describe('isSetOutstanding', () => {
+  it('treats a skipped set as settled', () => {
+    expect(isSetOutstanding({ completed_at: null, skipped_at: null })).toBe(true);
+    expect(isSetOutstanding({ completed_at: 'done', skipped_at: null })).toBe(false);
+    expect(isSetOutstanding({ completed_at: null, skipped_at: 'passed' })).toBe(false);
+  });
+
+  it('opens on the first exercise still holding work', () => {
+    const exercises = [
+      { id: 'a', workout_sets: [{ completed_at: null, skipped_at: 'passed' }] },
+      { id: 'b', workout_sets: [{ completed_at: null, skipped_at: null }] },
+    ];
+    expect(initialWorkoutExerciseId(exercises)).toBe('b');
   });
 });

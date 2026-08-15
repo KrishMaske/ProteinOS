@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
 import { useState } from 'react';
-import { Keyboard, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Keyboard, Pressable, StyleSheet, View } from 'react-native';
 
 import { HeaderNavigationButton } from '@/components/header-navigation-button';
 import { AppText, Button, Card, ErrorState, Field, LoadingState, ProgressBar, Screen } from '@/components/ui';
@@ -10,7 +10,7 @@ import { ExerciseMedia } from '@/features/exercises/components/exercise-media';
 import { pickAndUploadFoodPhoto } from '@/features/nutrition/api/food-photo';
 import type { CompositionSummary } from '@/features/progress/services/weekly-body-metrics';
 import { useToday } from '@/features/today/hooks/use-today';
-import { useCompleteRestDay, useCompleteWorkout, useQuickLogSet, useStartWorkout } from '@/features/workouts/hooks/use-workout';
+import { useCompleteRestDay, useCompleteWorkout, useQuickLogSet, useSkipRoutineDay, useStartWorkout } from '@/features/workouts/hooks/use-workout';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { localDateKey } from '@/lib/date';
 import { kgToLb, lbToKg } from '@/lib/units';
@@ -26,6 +26,7 @@ export default function TodayScreen() {
   const quickLog = useQuickLogSet(activeSessionId);
   const complete = useCompleteWorkout();
   const completeRest = useCompleteRestDay();
+  const skipDay = useSkipRoutineDay();
   const beginWorkout = useActiveWorkoutStore((state) => state.begin);
   const clearWorkout = useActiveWorkoutStore((state) => state.clear);
   const clearPendingSetEdit = useActiveWorkoutStore((state) => state.clearSetEdit);
@@ -50,8 +51,8 @@ export default function TodayScreen() {
     exercise.workout_sets.map((set) => ({ set, exercise })),
   ) ?? [];
   const completedSets = sessionSets.filter(({ set }) => Boolean(set.completed_at)).length;
-  const nextSet = sessionSets.find(({ set }) => !set.completed_at);
-  const workoutError = start.error ?? quickLog.error ?? complete.error ?? completeRest.error;
+  const nextSet = sessionSets.find(({ set }) => !set.completed_at && !set.skipped_at);
+  const workoutError = start.error ?? quickLog.error ?? complete.error ?? completeRest.error ?? skipDay.error;
 
   function startTodayWorkout() {
     if (!data.suggestedDay || data.suggestedDay.is_rest_day) return;
@@ -167,6 +168,16 @@ export default function TodayScreen() {
             <AppText variant="eyebrow" color={colors.primary}>Today’s workout</AppText>
             <AppText variant="heading">{data.suggestedDay.name}</AppText>
             <Button accessibilityLabel={`Start ${data.suggestedDay.name}`} disabled={start.isPending} onPress={startTodayWorkout}>{start.isPending ? 'Preparing sets…' : 'Start workout'}</Button>
+            <Button
+              variant="ghost"
+              accessibilityLabel={`Skip ${data.suggestedDay.name}`}
+              disabled={skipDay.isPending}
+              onPress={() => Alert.alert('Skip this day?', 'The rotation moves on to the next day. Nothing is recorded as trained.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Skip day', onPress: () => skipDay.mutate(data.suggestedDay!.id) },
+              ])}>
+              {skipDay.isPending ? 'Skipping…' : 'Skip this day'}
+            </Button>
           </>
         ) : (
           <>

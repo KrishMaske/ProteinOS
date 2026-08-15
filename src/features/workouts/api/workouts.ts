@@ -72,6 +72,29 @@ export async function getWorkout(id: string): Promise<ActiveWorkout> {
 export async function updateWorkoutSet(id: string, values: Partial<Pick<WorkoutSet, 'weight_kg' | 'reps' | 'duration_seconds' | 'rpe' | 'rir' | 'completed_at' | 'set_type'>>) { const { error } = await supabase.from('workout_sets').update(values).eq('id', id); if (error) throw error; }
 export async function addWorkoutSet(exerciseId: string, nextIndex: number) { const { data, error } = await supabase.from('workout_sets').insert({ workout_session_exercise_id: exerciseId, set_index: nextIndex, set_type: 'working' }).select().single(); if (error) throw error; return data; }
 export async function removeWorkoutSet(id: string) { const { error } = await supabase.from('workout_sets').delete().eq('id', id); if (error) throw error; }
+/** Marks a set passed over. Skipped sets are excluded from volume, records and history. */
+export async function skipWorkoutSet(id: string, skipped: boolean) {
+  const { error } = await supabase.from('workout_sets')
+    .update({ skipped_at: skipped ? new Date().toISOString() : null, completed_at: null })
+    .eq('id', id);
+  if (error) throw error;
+}
+
+/** Skips every set of one exercise that has not already been logged. */
+export async function skipWorkoutExercise(exerciseId: string) {
+  const { error } = await supabase.from('workout_sets')
+    .update({ skipped_at: new Date().toISOString() })
+    .eq('workout_session_exercise_id', exerciseId)
+    .is('completed_at', null)
+    .is('skipped_at', null);
+  if (error) throw error;
+}
+
+/** Advances the rotation past a training day without recording a workout. */
+export async function skipRoutineDay(dayId: string) {
+  return callWorkoutRpc('skip_routine_day', { target_day_id: dayId });
+}
+
 export async function completeWorkout(id: string) { return callWorkoutRpc('complete_workout', { target_session_id: id }); }
 export async function discardWorkout(id: string) { const { error } = await supabase.from('workout_sessions').update({ status: 'discarded' }).eq('id', id); if (error) throw error; }
 export async function updateWorkoutExerciseNotes(id: string, notes: string | null) { const { error } = await supabase.from('workout_session_exercises').update({ notes }).eq('id', id); if (error) throw error; }

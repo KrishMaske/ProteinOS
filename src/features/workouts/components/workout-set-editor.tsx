@@ -21,6 +21,7 @@ type WorkoutSetEditorProps = {
   restSeconds: number;
   onSave: (values: Partial<WorkoutSet>, justCompleted?: boolean) => Promise<unknown>;
   onRemove: () => void;
+  onSkip: (skipped: boolean) => void;
 };
 
 const setTypes = ['warmup', 'working', 'failure', 'drop'] as const;
@@ -41,7 +42,7 @@ function fieldsFromServer(set: WorkoutSet, imperial: boolean): SetEntryFields {
   };
 }
 
-export function WorkoutSetEditor({ set, imperial, isCurrent, previous, restSeconds, onSave, onRemove }: WorkoutSetEditorProps) {
+export function WorkoutSetEditor({ set, imperial, isCurrent, previous, restSeconds, onSave, onRemove, onSkip }: WorkoutSetEditorProps) {
   const { colors } = useAppTheme();
   const pendingDraft = useActiveWorkoutStore((state) => state.pendingSetEdits[set.id]);
   const editSet = useActiveWorkoutStore((state) => state.editSet);
@@ -140,9 +141,12 @@ export function WorkoutSetEditor({ set, imperial, isCurrent, previous, restSecon
     }
   }
 
-  const summary = fields.reps || fields.duration
-    ? `${fields.weight ? `${fields.weight} ${imperial ? 'lb' : 'kg'} × ` : ''}${fields.reps ? `${fields.reps} reps` : `${fields.duration}s`}`
-    : completed ? 'Completed' : isCurrent ? 'Up next' : 'Not logged';
+  const skipped = Boolean(set.skipped_at) && !completed;
+  const summary = skipped
+    ? 'Skipped'
+    : fields.reps || fields.duration
+      ? `${fields.weight ? `${fields.weight} ${imperial ? 'lb' : 'kg'} × ` : ''}${fields.reps ? `${fields.reps} reps` : `${fields.duration}s`}`
+      : completed ? 'Completed' : isCurrent ? 'Up next' : 'Not logged';
 
   if (!expanded) {
     return (
@@ -155,11 +159,13 @@ export function WorkoutSetEditor({ set, imperial, isCurrent, previous, restSecon
           { backgroundColor: completed ? colors.raised : colors.surface, borderColor: isCurrent ? colors.primary : colors.line, opacity: pressed ? 0.72 : 1 },
         ]}>
         <View style={[styles.setNumber, { backgroundColor: completed ? colors.primary : colors.raised }]}>
-          {completed ? <Ionicons name="checkmark" size={19} color={colors.onPrimary} /> : <AppText variant="caption">{set.set_index + 1}</AppText>}
+          {completed ? <Ionicons name="checkmark" size={19} color={colors.onPrimary} />
+            : skipped ? <Ionicons name="play-skip-forward" size={16} color={colors.muted} />
+            : <AppText variant="caption">{set.set_index + 1}</AppText>}
         </View>
         <View style={styles.summaryCopy}>
           <AppText variant="caption" color={colors.muted}>{set.set_type}</AppText>
-          <AppText numberOfLines={1}>{summary}</AppText>
+          <AppText numberOfLines={1} color={skipped ? colors.muted : undefined}>{summary}</AppText>
         </View>
         <Ionicons name="chevron-forward" color={colors.muted} size={20} />
       </Pressable>
@@ -244,6 +250,7 @@ export function WorkoutSetEditor({ set, imperial, isCurrent, previous, restSecon
       <View style={styles.secondaryRow}>
         {completed ? <Button variant="ghost" style={styles.flex} disabled={saving} onPress={() => void persist('incomplete')}>Mark incomplete</Button> : null}
         <Button variant="ghost" style={styles.flex} disabled={saving} onPress={onRemove}>Remove set</Button>
+        <Button variant="ghost" onPress={() => onSkip(!skipped)}>{skipped ? 'Unskip this set' : 'Skip this set'}</Button>
       </View>
     </View>
   );

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { addWorkoutSet, completeRestDay, completeWorkout, discardWorkout, getWorkout, getWorkoutHistory, logActiveWorkoutSet, removeWorkoutSet, replaceWorkoutExercise, startWorkout, updateWorkoutExerciseNotes, updateWorkoutSet } from '@/features/workouts/api/workouts';
+import { addWorkoutSet, completeRestDay, completeWorkout, discardWorkout, getWorkout, getWorkoutHistory, logActiveWorkoutSet, removeWorkoutSet, replaceWorkoutExercise, startWorkout, updateWorkoutExerciseNotes, updateWorkoutSet , skipWorkoutSet, skipWorkoutExercise, skipRoutineDay } from '@/features/workouts/api/workouts';
 export const workoutKeys = { all: ['workouts'] as const, detail: (id: string) => ['workouts', id] as const };
 export function useWorkout(id: string) { return useQuery({ queryKey: workoutKeys.detail(id), queryFn: () => getWorkout(id), enabled: Boolean(id), refetchInterval: false }); }
 export function useStartWorkout() { const client = useQueryClient(); return useMutation({ mutationFn: ({ dayId }: { dayId: string }) => startWorkout(dayId), onSuccess: (session) => Promise.all([client.invalidateQueries({ queryKey: ['today'] }), client.invalidateQueries({ queryKey: workoutKeys.detail(session.id) })]) }); }
@@ -13,3 +13,31 @@ export function useDiscardWorkout() { const client = useQueryClient(); return us
 export function useWorkoutHistory() { return useQuery({ queryKey: ['workouts', 'history'], queryFn: getWorkoutHistory }); }
 export function useUpdateWorkoutExercise(workoutId: string) { const client = useQueryClient(); return useMutation({ mutationFn: ({ id, notes }: { id: string; notes: string | null }) => updateWorkoutExerciseNotes(id, notes), onSuccess: () => client.invalidateQueries({ queryKey: workoutKeys.detail(workoutId) }) }); }
 export function useReplaceWorkoutExercise(workoutId: string) { const client = useQueryClient(); return useMutation({ mutationFn: ({ id, exerciseKey }: { id: string; exerciseKey: string }) => replaceWorkoutExercise(id, exerciseKey), onSuccess: () => Promise.all([client.invalidateQueries({ queryKey: workoutKeys.detail(workoutId) }), client.invalidateQueries({ queryKey: ['today'] })]) }); }
+
+export function useSkipSet(workoutId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, skipped }: { id: string; skipped: boolean }) => skipWorkoutSet(id, skipped),
+    onSuccess: () => client.invalidateQueries({ queryKey: workoutKeys.detail(workoutId) }),
+  });
+}
+
+export function useSkipExercise(workoutId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: skipWorkoutExercise,
+    onSuccess: () => client.invalidateQueries({ queryKey: workoutKeys.detail(workoutId) }),
+  });
+}
+
+export function useSkipRoutineDay() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: skipRoutineDay,
+    // The rotation moved, so Today and the routine both show a different day now.
+    onSuccess: () => Promise.all([
+      client.invalidateQueries({ queryKey: ['today'] }),
+      client.invalidateQueries({ queryKey: ['routines'] }),
+    ]),
+  });
+}

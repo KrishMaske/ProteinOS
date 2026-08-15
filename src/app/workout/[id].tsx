@@ -9,7 +9,7 @@ import { radius, spacing } from '@/constants/tokens';
 import { ExerciseMedia } from '@/features/exercises/components/exercise-media';
 import { WorkoutSetEditor } from '@/features/workouts/components/workout-set-editor';
 import type { PreviousPerformance, WorkoutSet } from '@/features/workouts/api/workouts';
-import { useAddSet, useCompleteWorkout, useDiscardWorkout, useRemoveSet, useUpdateSet, useUpdateWorkoutExercise, useWorkout } from '@/features/workouts/hooks/use-workout';
+import { useAddSet, useCompleteWorkout, useDiscardWorkout, useRemoveSet, useSkipExercise, useSkipSet, useUpdateSet, useUpdateWorkoutExercise, useWorkout } from '@/features/workouts/hooks/use-workout';
 import { recommendProgressiveOverload } from '@/features/workouts/services/progressive-overload';
 import { initialWorkoutExerciseId, resolveWorkoutExercise } from '@/features/workouts/services/exercise-selection';
 import { calculateWorkoutVolume } from '@/features/workouts/services/workout-math';
@@ -28,6 +28,8 @@ export default function ActiveWorkoutScreen() {
   const add = useAddSet(id);
   const remove = useRemoveSet(id);
   const updateExercise = useUpdateWorkoutExercise(id);
+  const skipSet = useSkipSet(id);
+  const skipExercise = useSkipExercise(id);
   const complete = useCompleteWorkout();
   const discard = useDiscardWorkout();
   const clear = useActiveWorkoutStore((state) => state.clear);
@@ -97,7 +99,9 @@ export default function ActiveWorkoutScreen() {
   const allSets = orderedExercises.flatMap((exercise) => exercise.workout_sets);
   const normalizedSets = allSets.map((set) => ({ weightKg: set.weight_kg, reps: set.reps, completed: Boolean(set.completed_at), type: set.set_type }));
   const completedSets = allSets.filter((set) => Boolean(set.completed_at)).length;
-  const incompleteSets = allSets.length - completedSets;
+  const skippedSets = allSets.filter((set) => !set.completed_at && Boolean(set.skipped_at)).length;
+  // Skipped sets are settled, so finishing should not count them as left undone.
+  const incompleteSets = allSets.length - completedSets - skippedSets;
   const volume = calculateWorkoutVolume(normalizedSets);
   const imperial = workout.preferredUnits === 'imperial';
   const restSeconds = restTimerEndsAt ? Math.max(0, Math.ceil((restTimerEndsAt - now) / 1000)) : 0;
@@ -225,10 +229,10 @@ export default function ActiveWorkoutScreen() {
         </View>
 
         <View style={styles.progressHeader}>
-          <AppText variant="caption" color={colors.muted}>{completedSets} of {allSets.length} sets complete</AppText>
+          <AppText variant="caption" color={colors.muted}>{completedSets} of {allSets.length} sets complete{skippedSets ? ` · ${skippedSets} skipped` : ''}</AppText>
           <AppText variant="caption" color={colors.muted}>{Math.round(imperial ? kgToLb(volume) : volume)} {imperial ? 'lb' : 'kg'} volume</AppText>
         </View>
-        <ProgressBar label={`${completedSets} of ${allSets.length} workout sets complete`} value={allSets.length ? completedSets / allSets.length * 100 : 0} />
+        <ProgressBar label={`${completedSets} of ${allSets.length} workout sets complete`} value={allSets.length ? (completedSets + skippedSets) / allSets.length * 100 : 0} />
 
         {view === 'overview' ? (
           <WorkoutOverview
@@ -258,6 +262,12 @@ export default function ActiveWorkoutScreen() {
             ])}
             onSaveSet={saveSet}
             onSaveNotes={(notes) => updateExercise.mutate({ id: activeExercise.id, notes: notes.trim() || null })}
+            onSkipExercise={() => Alert.alert('Skip this exercise?', 'Its unlogged sets are marked skipped. They stay out of your volume and history, and you can still log them.', [
+              { text: 'Keep it', style: 'cancel' },
+              { text: 'Skip', onPress: () => skipExercise.mutate(activeExercise.id) },
+            ])}
+            onSkipSet={(setId, skipped) => skipSet.mutate({ id: setId, skipped })}
+            skipPending={skipExercise.isPending || skipSet.isPending}
             workoutId={id}
           />
         ) : (
@@ -270,7 +280,7 @@ export default function ActiveWorkoutScreen() {
   );
 }
 
-function FocusedExercise({ exercise, exerciseIndex, exerciseCount, imperial, prescription, previous, addSetPending, onAddSet, onRemoveSet, onSaveSet, onSaveNotes, workoutId }: {
+function FocusedExercise({ exercise, exerciseIndex, exerciseCount, imperial, prescription, previous, addSetPending, onAddSet, onRemoveSet, onSaveSet, onSaveNotes, onSkipExercise, onSkipSet, skipPending, workoutId }: {
   exercise: NonNullable<ReturnType<typeof useWorkout>['data']>['workout_session_exercises'][number];
   exerciseIndex: number;
   exerciseCount: number;
@@ -282,6 +292,9 @@ function FocusedExercise({ exercise, exerciseIndex, exerciseCount, imperial, pre
   onRemoveSet: (setId: string) => void;
   onSaveSet: (setId: string, values: Partial<WorkoutSet>, justCompleted?: boolean) => Promise<unknown>;
   onSaveNotes: (notes: string) => void;
+  onSkipExercise: () => void;
+  onSkipSet: (setId: string, skipped: boolean) => void;
+  skipPending: boolean;
   workoutId: string;
 }) {
   const { colors } = useAppTheme();
@@ -359,6 +372,7 @@ function FocusedExercise({ exercise, exerciseIndex, exerciseCount, imperial, pre
             isCurrent={set.id === currentSet?.id}
             key={set.id}
             onRemove={() => onRemoveSet(set.id)}
+            onSkip={(skipped) => onSkipSet(set.id, skipped)}
             onSave={(values, justCompleted) => onSaveSet(set.id, values, justCompleted)}
             previous={representativePrevious ? { weightKg: representativePrevious.weight_kg, reps: representativePrevious.reps } : null}
             restSeconds={prescription?.rest_seconds ?? 90}
@@ -366,6 +380,7 @@ function FocusedExercise({ exercise, exerciseIndex, exerciseCount, imperial, pre
           />
         ))}
         <Button variant="secondary" disabled={addSetPending} onPress={onAddSet}>{addSetPending ? 'Adding set…' : 'Add another set'}</Button>
+        <Button variant="ghost" disabled={skipPending} onPress={onSkipExercise}>Skip this exercise</Button>
       </View>
 
       <Card>

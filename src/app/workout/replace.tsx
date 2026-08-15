@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Keyboard, Pressable, StyleSheet, View } from 'react-native';
+import { Keyboard, StyleSheet, View } from 'react-native';
 
 import { AppText, EmptyState, ErrorState, Field, LoadingState, PressableCard, Screen } from '@/components/ui';
 import { spacing } from '@/constants/tokens';
@@ -35,12 +35,6 @@ export default function ReplaceExerciseScreen() {
       <Stack.Screen options={{
         title: 'Swap exercise',
         gestureEnabled: !replace.isPending,
-        headerBackVisible: false,
-        headerLeft: () => (
-          <Pressable accessibilityLabel="Cancel exercise replacement" disabled={replace.isPending} onPress={() => router.back()} style={styles.cancelButton}>
-            <AppText color={colors.primary}>Cancel</AppText>
-          </Pressable>
-        ),
       }} />
       <Screen contentContainerStyle={styles.screen}>
         <View style={styles.intro}>
@@ -94,7 +88,6 @@ export default function ReplaceExerciseScreen() {
 
 const styles = StyleSheet.create({
   screen: { paddingTop: spacing.md },
-  cancelButton: { minHeight: 44, minWidth: 60, alignItems: 'flex-start', justifyContent: 'center', paddingRight: spacing.sm },
   intro: { gap: spacing.xs },
   results: { gap: spacing.sm, width: '100%' },
   resultCard: { minHeight: 108, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, overflow: 'hidden' },
