@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Link, router, type Href } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { useState, type PropsWithChildren } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
@@ -8,6 +8,7 @@ import { radius, spacing } from '@/constants/tokens';
 import { estimateTargetsFromSettings } from '@/features/settings/api/settings';
 import { ageFromBirthDate } from '@/features/nutrition/services/nutrition-targets';
 import { useRecalculateNutritionTargets, useSettings, useUpdateBodyMeasurements, useUpdateFitnessGoal, useUpdateSettings } from '@/features/settings/hooks/use-settings';
+import { useGyms } from '@/features/gyms/hooks/use-gyms';
 import { useAppTheme } from '@/hooks/use-app-theme';
 import { supabase } from '@/lib/supabase/client';
 import { cmToIn, inToCm, kgToLb, lbToKg } from '@/lib/units';
@@ -53,6 +54,7 @@ export default function SettingsScreen() {
   const update = useUpdateSettings();
   const updateGoal = useUpdateFitnessGoal();
   const recalculate = useRecalculateNutritionTargets();
+  const gyms = useGyms();
   const clearActiveWorkout = useActiveWorkoutStore((state) => state.clear);
   const [openSelector, setOpenSelector] = useState<Selector | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -84,6 +86,7 @@ export default function SettingsScreen() {
     Number(target.carbohydrate_grams) === estimate.carbohydrateGrams &&
     Number(target.fat_grams) === estimate.fatGrams,
   );
+  const gymCount = gyms.data?.length ?? null;
   const dayOptions = [1, 2, 3, 4, 5, 6, 7];
   const minuteOptions = [...new Set([15, 30, 45, 60, 75, 90, 120, profile.preferred_session_minutes]
     .filter((value): value is number => value !== null))].sort((a, b) => a - b);
@@ -235,6 +238,13 @@ export default function SettingsScreen() {
             ))}
           </OptionGrid>
         ) : null}
+        <Divider />
+        <SelectorRow
+          expanded={false}
+          label="Gyms"
+          value={gymCount === null ? 'Manage' : gymCount === 0 ? 'None yet' : `${gymCount} saved`}
+          onPress={() => router.push('/gyms' as Href)}
+        />
       </SettingsSection>
 
       <SettingsSection title="Body">
@@ -344,15 +354,6 @@ export default function SettingsScreen() {
             value={deletingPhotos}
           />
         </View>
-      </SettingsSection>
-
-      <SettingsSection title="Training">
-        <Link href={'/gyms' as Href} asChild>
-          <Pressable accessibilityLabel="Manage gyms" style={({ pressed }) => [styles.selectorRow, { opacity: pressed ? 0.6 : 1 }]}>
-            <AppText style={styles.flex}>Gyms</AppText>
-            <Ionicons name="chevron-forward" size={20} color={colors.muted} />
-          </Pressable>
-        </Link>
       </SettingsSection>
 
       <SettingsSection title="Security">
