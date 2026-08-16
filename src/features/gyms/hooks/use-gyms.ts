@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   createGym,
+  getGymSubstitutions,
+  removeGymSubstitution,
+  setGymSubstitution,
   deleteGym,
   getGymComparison,
   getGyms,
@@ -71,5 +74,34 @@ export function useSetSessionGym(workoutId: string) {
       client.invalidateQueries({ queryKey: ['workouts', workoutId] }),
       client.invalidateQueries({ queryKey: ['today'] }),
     ]),
+  });
+}
+
+export function useGymSubstitutions(gymId: string | null) {
+  return useQuery({
+    queryKey: ['gyms', 'substitutions', gymId ?? 'none'],
+    queryFn: () => getGymSubstitutions(gymId!),
+    enabled: Boolean(gymId),
+  });
+}
+
+export function useSetGymSubstitution() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, gymId, from, toExerciseKey }: {
+      userId: string;
+      gymId: string;
+      from: { exercise_id: string | null; custom_exercise_id: string | null };
+      toExerciseKey: string;
+    }) => setGymSubstitution(userId, gymId, from, toExerciseKey),
+    onSuccess: () => client.invalidateQueries({ queryKey: ['gyms', 'substitutions'] }),
+  });
+}
+
+export function useRemoveGymSubstitution() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: removeGymSubstitution,
+    onSuccess: () => client.invalidateQueries({ queryKey: ['gyms', 'substitutions'] }),
   });
 }

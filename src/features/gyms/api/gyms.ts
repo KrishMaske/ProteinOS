@@ -75,3 +75,44 @@ export async function getGymComparison(exerciseKey?: string) {
   if (error) throw error;
   return data ?? [];
 }
+
+export type GymSubstitution = Tables<'gym_exercise_substitutions'>;
+
+/** Every standing swap for a gym, so the workout screen can show what will change. */
+export async function getGymSubstitutions(gymId: string) {
+  const { data, error } = await supabase
+    .from('gym_exercise_substitutions')
+    .select('*')
+    .eq('gym_id', gymId);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Records "at this gym, use B instead of A". Upserted on the gym and source exercise so
+ * changing your mind replaces the rule rather than stacking a second one.
+ */
+export async function setGymSubstitution(
+  userId: string,
+  gymId: string,
+  from: { exercise_id: string | null; custom_exercise_id: string | null },
+  toExerciseKey: string,
+) {
+  const separator = toExerciseKey.indexOf(':');
+  const kind = toExerciseKey.slice(0, separator);
+  const id = toExerciseKey.slice(separator + 1);
+  const { error } = await supabase.from('gym_exercise_substitutions').upsert({
+    user_id: userId,
+    gym_id: gymId,
+    exercise_id: from.exercise_id,
+    custom_exercise_id: from.custom_exercise_id,
+    substitute_exercise_id: kind === 'catalog' ? id : null,
+    substitute_custom_exercise_id: kind === 'custom' ? id : null,
+  }, { onConflict: 'gym_id,exercise_id,custom_exercise_id' });
+  if (error) throw error;
+}
+
+export async function removeGymSubstitution(id: string) {
+  const { error } = await supabase.from('gym_exercise_substitutions').delete().eq('id', id);
+  if (error) throw error;
+}

@@ -427,6 +427,78 @@ export type Database = {
         }
         Relationships: []
       }
+      gym_exercise_substitutions: {
+        Row: {
+          created_at: string
+          custom_exercise_id: string | null
+          exercise_id: string | null
+          gym_id: string
+          id: string
+          substitute_custom_exercise_id: string | null
+          substitute_exercise_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          custom_exercise_id?: string | null
+          exercise_id?: string | null
+          gym_id: string
+          id?: string
+          substitute_custom_exercise_id?: string | null
+          substitute_exercise_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          custom_exercise_id?: string | null
+          exercise_id?: string | null
+          gym_id?: string
+          id?: string
+          substitute_custom_exercise_id?: string | null
+          substitute_exercise_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gym_exercise_substitutions_custom_exercise_id_fkey"
+            columns: ["custom_exercise_id"]
+            isOneToOne: false
+            referencedRelation: "custom_exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gym_exercise_substitutions_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_catalog"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gym_exercise_substitutions_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gyms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gym_exercise_substitutions_substitute_custom_exercise_id_fkey"
+            columns: ["substitute_custom_exercise_id"]
+            isOneToOne: false
+            referencedRelation: "custom_exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gym_exercise_substitutions_substitute_exercise_id_fkey"
+            columns: ["substitute_exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercise_catalog"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gyms: {
         Row: {
           created_at: string

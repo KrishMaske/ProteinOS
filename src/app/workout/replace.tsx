@@ -1,13 +1,15 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Keyboard, StyleSheet, View } from 'react-native';
+import { Keyboard, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText, EmptyState, ErrorState, Field, LoadingState, PressableCard, Screen } from '@/components/ui';
-import { spacing } from '@/constants/tokens';
+import { radius, spacing } from '@/constants/tokens';
 import { ExerciseMedia } from '@/features/exercises/components/exercise-media';
 import { useExercises } from '@/features/exercises/hooks/use-exercises';
-import { useReplaceWorkoutExercise } from '@/features/workouts/hooks/use-workout';
+import { useGyms, useSetGymSubstitution } from '@/features/gyms/hooks/use-gyms';
+import { useReplaceWorkoutExercise, useWorkout } from '@/features/workouts/hooks/use-workout';
+import { useAuth } from '@/providers/auth-provider';
 import { useAppTheme } from '@/hooks/use-app-theme';
 
 export default function ReplaceExerciseScreen() {
@@ -17,6 +19,15 @@ export default function ReplaceExerciseScreen() {
   const [replacingKey, setReplacingKey] = useState<string | null>(null);
   const query = useExercises({ search });
   const replace = useReplaceWorkoutExercise(workoutId);
+  const workout = useWorkout(workoutId);
+  const gyms = useGyms();
+  const saveSubstitution = useSetGymSubstitution();
+  const { user } = useAuth();
+  // Remembering the swap is only meaningful once the session knows where it is.
+  const gymId = workout.data?.gym_id ?? null;
+  const gym = gyms.data?.find((item) => item.id === gymId) ?? null;
+  const [remember, setRemember] = useState(false);
+  const current = workout.data?.workout_session_exercises.find((item) => item.id === sessionExerciseId) ?? null;
 
   async function choose(exerciseKey: string) {
     if (!exerciseKey || replace.isPending) return;
@@ -24,6 +35,15 @@ export default function ReplaceExerciseScreen() {
     setReplacingKey(exerciseKey);
     try {
       await replace.mutateAsync({ id: sessionExerciseId, exerciseKey });
+      // Saved after the swap succeeds, so a failed swap leaves no standing rule behind.
+      if (remember && user && gymId && current) {
+        await saveSubstitution.mutateAsync({
+          userId: user.id,
+          gymId,
+          from: { exercise_id: current.exercise_id, custom_exercise_id: current.custom_exercise_id },
+          toExerciseKey: exerciseKey,
+        }).catch(() => undefined);
+      }
       router.back();
     } catch {
       setReplacingKey(null);
@@ -37,6 +57,26 @@ export default function ReplaceExerciseScreen() {
         gestureEnabled: !replace.isPending,
       }} />
       <Screen contentContainerStyle={styles.screen}>
+        {gym ? (
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: remember }}
+            accessibilityLabel={`Always swap this exercise at ${gym.name}`}
+            onPress={() => setRemember((value) => !value)}
+            style={({ pressed }) => [styles.rememberRow, { backgroundColor: colors.raised, opacity: pressed ? 0.7 : 1 }]}>
+            <Ionicons
+              name={remember ? 'checkbox' : 'square-outline'}
+              size={22}
+              color={remember ? colors.primary : colors.muted}
+            />
+            <View style={styles.rememberCopy}>
+              <AppText variant="caption">Always swap this at {gym.name}</AppText>
+              <AppText variant="caption" color={colors.muted}>
+                Future workouts there start with the replacement already in place
+              </AppText>
+            </View>
+          </Pressable>
+        ) : null}
         <View style={styles.intro}>
           <AppText variant="heading">Choose a replacement</AppText>
           <AppText color={colors.muted}>Your logged sets stay in this workout. Only the exercise changes.</AppText>
@@ -87,6 +127,8 @@ export default function ReplaceExerciseScreen() {
 }
 
 const styles = StyleSheet.create({
+  rememberRow: { minWidth: 0, minHeight: 56, borderRadius: radius.md, padding: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  rememberCopy: { flex: 1, minWidth: 0, gap: 2 },
   screen: { paddingTop: spacing.md },
   intro: { gap: spacing.xs },
   results: { gap: spacing.sm, width: '100%' },
