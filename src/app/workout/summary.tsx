@@ -4,6 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { HeaderNavigationButton } from '@/components/header-navigation-button';
 import { AppText, Button, Card, ErrorState, LoadingState, Screen } from '@/components/ui';
+import { GymPicker } from '@/features/gyms/components/gym-picker';
 import { radius, spacing } from '@/constants/tokens';
 import { useWorkout } from '@/features/workouts/hooks/use-workout';
 import { recommendProgressiveOverload } from '@/features/workouts/services/progressive-overload';
@@ -64,6 +65,8 @@ export default function WorkoutSummaryScreen() {
           <AppText variant="title" style={styles.centerText}>{workout.name}</AppText>
           <AppText color={colors.muted}>{new Date(workout.started_at).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}</AppText>
         </View>
+
+        <GymPicker sessionId={id} gymId={workout.gym_id} />
 
         <View style={styles.statGrid}>
           <StatCard label="Duration" value={`${durationMinutes}`} unit="min" />
