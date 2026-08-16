@@ -29,6 +29,18 @@ const loggedFoodItem = strictObject({
   fiberGrams: nullableNumber,
 });
 
+
+/** Splits a catalog:/custom: key into the column pair the routine tables expect. */
+function referenceFromKey(exerciseKey: string) {
+  const separator = exerciseKey.indexOf(':');
+  const kind = exerciseKey.slice(0, separator);
+  const id = exerciseKey.slice(separator + 1);
+  if (!id || (kind !== 'catalog' && kind !== 'custom')) throw new Error('Exercise key must start with catalog: or custom:');
+  return kind === 'catalog'
+    ? { exercise_id: id, custom_exercise_id: null }
+    : { exercise_id: null, custom_exercise_id: id };
+}
+
 function strictObject(properties: Record<string, unknown>, required = Object.keys(properties)) {
   return { type: 'object', additionalProperties: false, properties, required };
 }
@@ -269,6 +281,82 @@ export const coachTools = [
     }),
   },
   {
+    type: 'function', name: 'manage_routine', strict: true,
+    description: 'Create, rename, duplicate, activate, deactivate or archive a routine. Activating one archives whatever was active, and only a draft whose training days all hold exercises can be activated. Get ids from get_active_routine.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['create', 'rename', 'duplicate', 'activate', 'deactivate', 'archive'] },
+      routineId: nullableString,
+      name: nullableString,
+    }),
+  },
+  {
+    type: 'function', name: 'manage_routine_day', strict: true,
+    description: 'Add, rename, duplicate or reorder the slots in a routine cycle, or move the rotation past the current one. A cycle is a repeating order, not a weekday calendar. complete_rest and skip both advance the rotation and only apply to the slot currently up next.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['add', 'rename', 'duplicate', 'reorder', 'complete_rest', 'skip'] },
+      routineId: nullableString,
+      dayId: nullableString,
+      name: nullableString,
+      isRestDay: { type: ['boolean', 'null'] },
+      orderedDayIds: { type: ['array', 'null'], items: { type: 'string' }, maxItems: 40 },
+    }),
+  },
+  {
+    type: 'function', name: 'manage_routine_exercise', strict: true,
+    description: 'Add an exercise to a routine slot, change its prescribed sets, reps, rest or RIR, remove it, or reorder the slot. Verify exercise ids with search_exercises before adding. Changing a prescription affects future workouts, not one already in progress.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['add', 'update', 'remove', 'reorder'] },
+      dayId: nullableString,
+      routineExerciseId: nullableString,
+      exerciseKey: nullableString,
+      targetSets: nullableNumber,
+      repMin: nullableNumber,
+      repMax: nullableNumber,
+      restSeconds: nullableNumber,
+      targetRir: nullableNumber,
+      notes: nullableString,
+      orderedExerciseIds: { type: ['array', 'null'], items: { type: 'string' }, maxItems: 40 },
+    }),
+  },
+  {
+    type: 'function', name: 'manage_workout', strict: true,
+    description: 'Start, finish or discard a workout, or set which gym it happened at. Starting returns any session already in progress rather than opening a second. Finishing advances the routine rotation; discarding does not.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['start', 'complete', 'discard', 'set_gym'] },
+      dayId: nullableString,
+      sessionId: nullableString,
+      gymId: nullableString,
+    }),
+  },
+  {
+    type: 'function', name: 'manage_workout_set', strict: true,
+    description: 'Log, correct, add, remove or skip a set in the workout in progress. log records weight and reps and marks it done. skip marks a set passed over: it stays out of volume, records and history, which is the honest way to handle a set that was not performed. Get ids from get_active_workout.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['log', 'update', 'add', 'remove', 'skip', 'unskip'] },
+      setId: nullableString,
+      workoutExerciseId: nullableString,
+      weightKg: nullableNumber,
+      reps: nullableNumber,
+      rpe: nullableNumber,
+      rir: nullableNumber,
+    }),
+  },
+  {
+    type: 'function', name: 'manage_workout_exercise', strict: true,
+    description: 'Attach notes to an exercise in the workout in progress, swap it for another, or skip its remaining sets. Swapping keeps sets already logged. Verify a replacement with search_exercises first.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['set_notes', 'replace', 'skip'] },
+      workoutExerciseId: { type: 'string', minLength: 1 },
+      notes: nullableString,
+      exerciseKey: nullableString,
+    }),
+  },
+  {
+    type: 'function', name: 'get_active_workout', strict: true,
+    description: 'Get the workout in progress with its exercises and every set, including which are logged or skipped. Needed before correcting a set, since it carries the ids.',
+    parameters: strictObject({}),
+  },
+  {
     type: 'function', name: 'get_active_routine', strict: true,
     description: 'Get the active routine and its ordered days and exercises.',
     parameters: strictObject({ includeExercises: { type: 'boolean' } }),
@@ -468,6 +556,54 @@ const toolInputSchemas: Record<string, z.ZodType> = {
     dailyActivityLevel: z.enum(['sedentary', 'light', 'moderate', 'very_active']).nullable(),
     preferredUnits: z.enum(['metric', 'imperial']).nullable(),
   }).strict(),
+  manage_routine: z.object({
+    action: z.enum(['create', 'rename', 'duplicate', 'activate', 'deactivate', 'archive']),
+    routineId: z.string().min(1).nullable(),
+    name: nullableText,
+  }).strict(),
+  manage_routine_day: z.object({
+    action: z.enum(['add', 'rename', 'duplicate', 'reorder', 'complete_rest', 'skip']),
+    routineId: z.string().min(1).nullable(),
+    dayId: z.string().min(1).nullable(),
+    name: nullableText,
+    isRestDay: z.boolean().nullable(),
+    orderedDayIds: z.array(z.string().min(1)).max(40).nullable(),
+  }).strict(),
+  manage_routine_exercise: z.object({
+    action: z.enum(['add', 'update', 'remove', 'reorder']),
+    dayId: z.string().min(1).nullable(),
+    routineExerciseId: z.string().min(1).nullable(),
+    exerciseKey: z.string().regex(/^(catalog|custom):.+$/).nullable(),
+    targetSets: z.number().int().min(1).max(20).nullable(),
+    repMin: z.number().int().min(1).max(100).nullable(),
+    repMax: z.number().int().min(1).max(100).nullable(),
+    restSeconds: z.number().int().min(0).max(900).nullable(),
+    targetRir: z.number().min(0).max(10).nullable(),
+    notes: nullableText,
+    orderedExerciseIds: z.array(z.string().min(1)).max(40).nullable(),
+  }).strict(),
+  manage_workout: z.object({
+    action: z.enum(['start', 'complete', 'discard', 'set_gym']),
+    dayId: z.string().min(1).nullable(),
+    sessionId: z.string().min(1).nullable(),
+    gymId: z.string().min(1).nullable(),
+  }).strict(),
+  manage_workout_set: z.object({
+    action: z.enum(['log', 'update', 'add', 'remove', 'skip', 'unskip']),
+    setId: z.string().min(1).nullable(),
+    workoutExerciseId: z.string().min(1).nullable(),
+    weightKg: z.number().min(0).max(1000).nullable(),
+    reps: z.number().int().min(0).max(1000).nullable(),
+    rpe: z.number().min(0).max(10).nullable(),
+    rir: z.number().min(0).max(10).nullable(),
+  }).strict(),
+  manage_workout_exercise: z.object({
+    action: z.enum(['set_notes', 'replace', 'skip']),
+    workoutExerciseId: z.string().min(1),
+    notes: nullableText,
+    exerciseKey: z.string().regex(/^(catalog|custom):.+$/).nullable(),
+  }).strict(),
+  get_active_workout: z.object({}).strict(),
   get_active_routine: z.object({ includeExercises: z.boolean() }).strict(),
   search_exercises: z.object({ query: z.string(), bodyPart: nullableText, target: nullableText, equipment: nullableText, limit: z.number().int().min(1).max(20) }).strict(),
   get_exercise_details: z.object({ exerciseIds: z.array(z.string().min(1)).min(1).max(20) }).strict(),
@@ -1015,6 +1151,289 @@ export async function executeCoachTool(client: SupabaseClient, userId: string, n
       const affectsTargets = ['height_cm', 'target_weight_kg', 'training_days_per_week',
         'preferred_session_minutes', 'daily_activity_level'].some((key) => key in patch);
       return { ok: true, changed: Object.keys(patch), targetsNeedRecalculating: affectsTargets };
+    }
+    case 'manage_routine': {
+      if (args.action === 'create') {
+        if (!args.name) throw new Error('name is required to create a routine');
+        const { data, error } = await client.from('workout_routines')
+          .insert({ user_id: userId, name: args.name.trim(), status: 'draft', source: 'manual' })
+          .select('id,name,status').single();
+        if (error) throw error;
+        const { error: dayError } = await client.from('routine_days')
+          .insert({ routine_id: data.id, name: 'Day 1', day_index: 0 });
+        if (dayError) throw dayError;
+        return { ok: true, routine: data };
+      }
+      if (!args.routineId) throw new Error('routineId is required');
+      if (args.action === 'activate') {
+        // The RPC archives whatever was active and refuses an incomplete draft.
+        const { error } = await client.rpc('activate_routine', { target_routine_id: args.routineId });
+        if (error) throw error;
+        return { ok: true, activated: args.routineId };
+      }
+      if (args.action === 'rename') {
+        if (!args.name) throw new Error('name is required to rename');
+        const { error } = await client.from('workout_routines')
+          .update({ name: args.name.trim() }).eq('id', args.routineId);
+        if (error) throw error;
+        return { ok: true, routineId: args.routineId, name: args.name };
+      }
+      if (args.action === 'duplicate') {
+        const { data: original, error: readError } = await client.from('workout_routines')
+          .select('name, routine_days(name,day_index,notes,is_rest_day,routine_exercises(*))')
+          .eq('id', args.routineId).single();
+        if (readError) throw readError;
+        const { data: copy, error } = await client.from('workout_routines')
+          .insert({ user_id: userId, name: `${original.name} copy`, status: 'draft', source: 'manual' })
+          .select('id').single();
+        if (error) throw error;
+        for (const day of original.routine_days ?? []) {
+          const { data: newDay, error: dayError } = await client.from('routine_days')
+            .insert({ routine_id: copy.id, name: day.name, day_index: day.day_index, notes: day.notes, is_rest_day: day.is_rest_day })
+            .select('id').single();
+          if (dayError) throw dayError;
+          if (day.routine_exercises?.length) {
+            const { error: exError } = await client.from('routine_exercises').insert(
+              day.routine_exercises.map((item: any) => ({
+                routine_day_id: newDay.id,
+                exercise_id: item.exercise_id,
+                custom_exercise_id: item.custom_exercise_id,
+                exercise_index: item.exercise_index,
+                target_sets: item.target_sets,
+                rep_min: item.rep_min,
+                rep_max: item.rep_max,
+                rest_seconds: item.rest_seconds,
+                target_rpe: item.target_rpe,
+                target_rir: item.target_rir,
+                notes: item.notes,
+              })),
+            );
+            if (exError) throw exError;
+          }
+        }
+        return { ok: true, routineId: copy.id, copiedFrom: args.routineId };
+      }
+      const status = args.action === 'archive' ? 'archived' : 'draft';
+      const { error } = await client.from('workout_routines')
+        .update({ status }).eq('id', args.routineId);
+      if (error) throw error;
+      return { ok: true, routineId: args.routineId, status };
+    }
+    case 'manage_routine_day': {
+      if (args.action === 'complete_rest' || args.action === 'skip') {
+        if (!args.dayId) throw new Error('dayId is required');
+        const rpc = args.action === 'skip' ? 'skip_routine_day' : 'complete_rest_day';
+        const { error } = await client.rpc(rpc, { target_day_id: args.dayId });
+        if (error) throw error;
+        return { ok: true, dayId: args.dayId, action: args.action };
+      }
+      if (args.action === 'reorder') {
+        if (!args.routineId || !args.orderedDayIds) throw new Error('routineId and orderedDayIds are required');
+        const { error } = await client.rpc('reorder_routine_days', {
+          target_routine_id: args.routineId, ordered_day_ids: args.orderedDayIds,
+        });
+        if (error) throw error;
+        return { ok: true, routineId: args.routineId, order: args.orderedDayIds };
+      }
+      if (args.action === 'rename') {
+        if (!args.dayId || !args.name) throw new Error('dayId and name are required');
+        const { error } = await client.from('routine_days')
+          .update({ name: args.name.trim() }).eq('id', args.dayId);
+        if (error) throw error;
+        return { ok: true, dayId: args.dayId, name: args.name };
+      }
+      if (!args.routineId) throw new Error('routineId is required');
+      const { data: siblings, error: countError } = await client.from('routine_days')
+        .select('day_index').eq('routine_id', args.routineId)
+        .order('day_index', { ascending: false }).limit(1);
+      if (countError) throw countError;
+      const nextIndex = (siblings?.[0]?.day_index ?? -1) + 1;
+
+      if (args.action === 'add') {
+        const isRest = args.isRestDay ?? false;
+        const { data, error } = await client.from('routine_days')
+          .insert({ routine_id: args.routineId, name: args.name?.trim() ?? (isRest ? 'Rest' : `Day ${nextIndex + 1}`), day_index: nextIndex, is_rest_day: isRest })
+          .select('id,name,day_index,is_rest_day').single();
+        if (error) throw error;
+        return { ok: true, day: data };
+      }
+      if (!args.dayId) throw new Error('dayId is required to duplicate');
+      const { data: original, error: readError } = await client.from('routine_days')
+        .select('name,notes,is_rest_day,routine_exercises(*)').eq('id', args.dayId).single();
+      if (readError) throw readError;
+      const { data: copy, error } = await client.from('routine_days')
+        .insert({ routine_id: args.routineId, name: original.is_rest_day ? 'Rest' : `${original.name} copy`, day_index: nextIndex, notes: original.notes, is_rest_day: original.is_rest_day })
+        .select('id').single();
+      if (error) throw error;
+      if (original.routine_exercises?.length) {
+        const { error: exError } = await client.from('routine_exercises').insert(
+          original.routine_exercises.map((item: any) => ({
+            routine_day_id: copy.id,
+            exercise_id: item.exercise_id,
+            custom_exercise_id: item.custom_exercise_id,
+            exercise_index: item.exercise_index,
+            target_sets: item.target_sets,
+            rep_min: item.rep_min,
+            rep_max: item.rep_max,
+            rest_seconds: item.rest_seconds,
+            target_rpe: item.target_rpe,
+            target_rir: item.target_rir,
+            notes: item.notes,
+          })),
+        );
+        if (exError) throw exError;
+      }
+      return { ok: true, dayId: copy.id, copiedFrom: args.dayId };
+    }
+    case 'manage_routine_exercise': {
+      if (args.action === 'reorder') {
+        if (!args.dayId || !args.orderedExerciseIds) throw new Error('dayId and orderedExerciseIds are required');
+        const { error } = await client.rpc('reorder_routine_exercises', {
+          target_day_id: args.dayId, ordered_exercise_ids: args.orderedExerciseIds,
+        });
+        if (error) throw error;
+        return { ok: true, dayId: args.dayId, order: args.orderedExerciseIds };
+      }
+      if (args.action === 'remove') {
+        if (!args.routineExerciseId) throw new Error('routineExerciseId is required');
+        const { error } = await client.from('routine_exercises').delete().eq('id', args.routineExerciseId);
+        if (error) throw error;
+        return { ok: true, removed: args.routineExerciseId };
+      }
+      if (args.action === 'add') {
+        if (!args.dayId || !args.exerciseKey) throw new Error('dayId and exerciseKey are required');
+        const reference = referenceFromKey(args.exerciseKey);
+        const { data: siblings, error: countError } = await client.from('routine_exercises')
+          .select('exercise_index').eq('routine_day_id', args.dayId)
+          .order('exercise_index', { ascending: false }).limit(1);
+        if (countError) throw countError;
+        const { data, error } = await client.from('routine_exercises').insert({
+          routine_day_id: args.dayId,
+          ...reference,
+          exercise_index: (siblings?.[0]?.exercise_index ?? -1) + 1,
+          target_sets: args.targetSets ?? 3,
+          rep_min: args.repMin ?? 8,
+          rep_max: args.repMax ?? 12,
+          rest_seconds: args.restSeconds ?? 90,
+          target_rir: args.targetRir ?? 2,
+          notes: args.notes,
+        }).select('id,exercise_index').single();
+        if (error) throw error;
+        return { ok: true, routineExercise: data };
+      }
+      if (!args.routineExerciseId) throw new Error('routineExerciseId is required');
+      const patch: Record<string, unknown> = {};
+      if (args.targetSets !== null) patch.target_sets = args.targetSets;
+      if (args.repMin !== null) patch.rep_min = args.repMin;
+      if (args.repMax !== null) patch.rep_max = args.repMax;
+      if (args.restSeconds !== null) patch.rest_seconds = args.restSeconds;
+      if (args.targetRir !== null) patch.target_rir = args.targetRir;
+      if (args.notes !== null) patch.notes = args.notes;
+      if (!Object.keys(patch).length) throw new Error('Give at least one field to change');
+      const { error } = await client.from('routine_exercises').update(patch).eq('id', args.routineExerciseId);
+      if (error) throw error;
+      return { ok: true, routineExerciseId: args.routineExerciseId, changed: Object.keys(patch) };
+    }
+    case 'manage_workout': {
+      if (args.action === 'start') {
+        if (!args.dayId) throw new Error('dayId is required to start a workout');
+        const { data, error } = await client.rpc('start_or_resume_workout', { target_day_id: args.dayId });
+        if (error) throw error;
+        return { ok: true, session: data };
+      }
+      if (!args.sessionId) throw new Error('sessionId is required');
+      if (args.action === 'complete') {
+        const { data, error } = await client.rpc('complete_workout', { target_session_id: args.sessionId });
+        if (error) throw error;
+        return { ok: true, session: data };
+      }
+      if (args.action === 'discard') {
+        const { error } = await client.from('workout_sessions')
+          .update({ status: 'discarded' }).eq('id', args.sessionId);
+        if (error) throw error;
+        return { ok: true, discarded: args.sessionId };
+      }
+      const { error } = await client.from('workout_sessions')
+        .update({ gym_id: args.gymId }).eq('id', args.sessionId);
+      if (error) throw error;
+      return { ok: true, sessionId: args.sessionId, gymId: args.gymId };
+    }
+    case 'manage_workout_set': {
+      if (args.action === 'add') {
+        if (!args.workoutExerciseId) throw new Error('workoutExerciseId is required');
+        const { data: siblings, error: countError } = await client.from('workout_sets')
+          .select('set_index').eq('workout_session_exercise_id', args.workoutExerciseId)
+          .order('set_index', { ascending: false }).limit(1);
+        if (countError) throw countError;
+        const { data, error } = await client.from('workout_sets').insert({
+          workout_session_exercise_id: args.workoutExerciseId,
+          set_index: (siblings?.[0]?.set_index ?? -1) + 1,
+          set_type: 'working',
+        }).select('id,set_index').single();
+        if (error) throw error;
+        return { ok: true, set: data };
+      }
+      if (!args.setId) throw new Error('setId is required');
+      if (args.action === 'remove') {
+        const { error } = await client.from('workout_sets').delete().eq('id', args.setId);
+        if (error) throw error;
+        return { ok: true, removed: args.setId };
+      }
+      if (args.action === 'skip' || args.action === 'unskip') {
+        const skipping = args.action === 'skip';
+        const { error } = await client.from('workout_sets')
+          .update({ skipped_at: skipping ? new Date().toISOString() : null, ...(skipping ? { completed_at: null } : {}) })
+          .eq('id', args.setId);
+        if (error) throw error;
+        return { ok: true, setId: args.setId, skipped: skipping };
+      }
+      if (args.action === 'log') {
+        if (args.reps === null) throw new Error('reps are required to log a set');
+        // The RPC stamps completion and keeps the set consistent with the session.
+        const { error } = await client.rpc('log_active_workout_set', {
+          target_set_id: args.setId, target_weight_kg: args.weightKg, target_reps: args.reps,
+        });
+        if (error) throw error;
+        return { ok: true, setId: args.setId, weightKg: args.weightKg, reps: args.reps };
+      }
+      const patch: Record<string, unknown> = {};
+      if (args.weightKg !== null) patch.weight_kg = args.weightKg;
+      if (args.reps !== null) patch.reps = args.reps;
+      if (args.rpe !== null) patch.rpe = args.rpe;
+      if (args.rir !== null) patch.rir = args.rir;
+      if (!Object.keys(patch).length) throw new Error('Give at least one field to change');
+      const { error } = await client.from('workout_sets').update(patch).eq('id', args.setId);
+      if (error) throw error;
+      return { ok: true, setId: args.setId, changed: Object.keys(patch) };
+    }
+    case 'manage_workout_exercise': {
+      if (args.action === 'set_notes') {
+        const { error } = await client.from('workout_session_exercises')
+          .update({ notes: args.notes }).eq('id', args.workoutExerciseId);
+        if (error) throw error;
+        return { ok: true, workoutExerciseId: args.workoutExerciseId };
+      }
+      if (args.action === 'replace') {
+        if (!args.exerciseKey) throw new Error('exerciseKey is required to replace');
+        const { error } = await client.from('workout_session_exercises')
+          .update(referenceFromKey(args.exerciseKey)).eq('id', args.workoutExerciseId);
+        if (error) throw error;
+        return { ok: true, workoutExerciseId: args.workoutExerciseId, exerciseKey: args.exerciseKey };
+      }
+      // Only sets still outstanding are skipped, so anything already logged is kept.
+      const { error } = await client.from('workout_sets')
+        .update({ skipped_at: new Date().toISOString() })
+        .eq('workout_session_exercise_id', args.workoutExerciseId)
+        .is('completed_at', null).is('skipped_at', null);
+      if (error) throw error;
+      return { ok: true, skippedExercise: args.workoutExerciseId };
+    }
+    case 'get_active_workout': {
+      const { data, error } = await client.from('workout_sessions')
+        .select('id,name,started_at,gym_id,routine_day_id,workout_session_exercises(id,exercise_index,notes,exercise_id,custom_exercise_id,workout_sets(id,set_index,set_type,weight_kg,reps,rpe,rir,completed_at,skipped_at))')
+        .eq('status', 'in_progress').order('started_at', { ascending: false }).limit(1).maybeSingle();
+      if (error) throw error;
+      return { activeWorkout: data };
     }
     case 'create_recipe': {
       const { data: created, error } = await client.from('recipes').insert({
