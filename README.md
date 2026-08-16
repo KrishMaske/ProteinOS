@@ -1,172 +1,291 @@
 # ProteinOS
 
-ProteinOS is an Expo/React Native personal fitness and nutrition tracker backed directly by Supabase. The core loop works without AI: onboard, build a routine, log a workout, record food, and track progress. OpenAI-powered coaching and food-photo estimates are isolated in authenticated Supabase Edge Functions.
+A training and nutrition tracker built as an Expo app on Supabase, with an AI coach that can
+read and change everything the user can.
 
-The phone UI uses four focused tabs—Today, Train, Nutrition, and Progress. Coach is available contextually from Today and plan creation instead of occupying a permanent tab.
+The app is opinionated about one thing: **a number shown to the user has to be defensible.**
+Calorie targets are derived from published equations rather than a flat default, body-fat
+estimates state their method and error band, and figures that cannot be computed honestly are
+left blank rather than filled with a guess.
+
+---
 
 ## Stack
 
-- Expo SDK 54, React Native, TypeScript, and Expo Router (temporarily pinned for physical-device Expo Go testing)
-- Supabase Auth, Postgres, Storage, and Edge Functions
-- TanStack Query for server state
-- Persisted Zustand state for active-workout recovery, pending edits, and the rest timer
-- Zod and React Hook Form for validation
-- OpenAI Responses API through server-side Edge Functions only
+| | |
+|---|---|
+| Expo SDK | 57.0.13 |
+| expo-router | 57.0.13 (file-based routing, typed routes) |
+| React Native | 0.86.2 |
+| React | 19.2.3 (React Compiler enabled) |
+| Backend | Supabase — Postgres, Auth, Storage, Edge Functions |
+| Server state | TanStack Query 5 |
+| Client state | Zustand 5 (active workout only) |
+| Forms | react-hook-form + Zod 4 |
+| Types | TypeScript 6 |
+| Tests | Vitest 4 — 219 tests |
 
-Normal CRUD flows directly between the mobile client and Supabase under Row Level Security. There is no custom application server.
+**Scale:** 36 routes · 25 tables · 6 views · 21 database functions · 85 RLS policies ·
+6 storage buckets · 5 edge functions · 29 migrations
 
-## Prerequisites
+---
 
-- Node.js 20 or newer
-- npm
-- Docker Desktop for the local Supabase stack
-- A Supabase project and Supabase CLI login
-- An OpenAI API key for the optional AI features
+## Architecture
 
-## Configure the client
+### Layering
 
-```powershell
-Copy-Item .env.example .env
+```
+src/app/            expo-router routes; screens only
+src/features/*/     one folder per domain
+  api/              Supabase calls, no React
+  hooks/            TanStack Query wrappers
+  services/         pure functions, no I/O — where the tested logic lives
+  components/       shared feature UI
+src/components/ui   the design system (Screen, Card, Field, Button…)
+src/providers/      auth, theme, query client
+src/store/          Zustand, active workout only
 ```
 
-Fill in only the public client values:
+The rule that matters: **domain logic lives in `services/` as pure functions.** They take
+numbers and return numbers, touch no network, and carry the test suite. Anything involving
+Supabase lives in `api/`, and screens compose hooks. This is why 219 tests run in ~4 seconds
+with no mocking of the database.
 
-```text
-EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+### Server state vs client state
+
+TanStack Query owns everything persisted. Zustand holds exactly one thing — the active workout
+session id and rest timer — because that is genuinely local, ephemeral UI state that should
+survive navigation but never be written to the server.
+
+### Why so much logic is in Postgres
+
+Multi-step writes that must not half-apply are RPCs, not client sequences:
+
+- `start_or_resume_workout` — returns an existing session or creates one, copies the
+  prescription, pre-creates sets, and applies per-gym substitutions, under a per-user advisory
+  lock so a double tap cannot create two sessions.
+- `complete_workout` / `complete_rest_day` / `skip_routine_day` — advance the rotation, but
+  only when the day being completed *is* the current cycle day.
+- `log_saved_food` / `log_recipe` — fold a repeat log into the existing entry, raising its
+  count and scaling macros, rather than adding a duplicate row.
+- `set_food_log_item_quantity` — scales grams and all four macros by one ratio in a single
+  statement, so a row can never hold a count that disagrees with its own calories.
+
+Every table has RLS enabled. Views are `security_invoker` so they inherit it rather than
+bypassing it.
+
+---
+
+## Domain logic
+
+### Calorie targets
+
+Targets are derived, never defaulted. The chain is in
+`src/features/nutrition/services/nutrition-targets.ts`:
+
+```
+BMR         Mifflin-St Jeor (10·kg + 6.25·cm − 5·age + sex constant)
+TDEE        BMR × lifestyle multiplier + training burn
+goal        ±% applied to TDEE, tapered as the goal is approached
+macros      protein from bodyweight, fat as a share, carbs take the remainder
 ```
 
-Never place `OPENAI_API_KEY`, a Supabase service-role key, or any other server secret in an `EXPO_PUBLIC_` variable. `.env` is ignored by Git.
+Two decisions worth calling out:
 
-## Local development
+**Training is costed separately from lifestyle.** The classic Harris-Benedict multipliers
+describe *total daily activity* — "very active" means hard exercise *and* being on your feet
+all day. Mapping gym frequency straight onto them treats someone who lifts six times a week as
+a labourer and overstates maintenance by several hundred calories. Instead a lifestyle
+multiplier covers life outside the gym, and training is added on at 4 net METs × bodyweight ×
+hours, which values an hour of lifting at roughly 250 kcal rather than 900.
 
-Install dependencies and start Supabase:
+**Carbs absorb the remainder.** Protein is set from bodyweight and fat from a share of
+calories; carbohydrates take whatever energy is left. This guarantees the macros always sum
+back to the calorie target — an earlier version computed all three independently and produced
+splits that missed the target by 4%.
 
-```powershell
+Guards: the target never drops below BMR or 1200 kcal, fat holds a 0.6 g/kg floor, and protein
+is capped at 40% of calories so heavy cutters keep a workable split.
+
+If enough weight and intake history exists, observed maintenance (average intake minus the
+energy implied by the weight trend) replaces the formula estimate, clamped to ±20% of it.
+
+### Body composition
+
+`src/features/progress/services/body-composition.ts`
+
+BMI is exact arithmetic. Body fat is an **estimate**, and the code says so — it reports which
+method produced the number and its error band:
+
+1. A logged measurement, if one exists
+2. **Relative Fat Mass** — `64 − 20 × (height/waist)`, women `76 − …` (Woolcott & Bergman 2018)
+3. **Deurenberg** from BMI and age, when no waist is recorded
+
+RFM is used over the more common US Navy method because the app collects waist but not neck or
+hip, and RFM validates better against DXA anyway. Healthy ranges come from Gallagher et al.
+(2000) Table 4, stratified by age and sex — body fat rises with age at constant health risk, so
+a single band would mislabel older adults.
+
+An unstated biological sex takes the **midpoint** of the male and female constants rather than
+assuming one. Same convention in BMR, RFM and Deurenberg.
+
+Everything is computed from **weekly averages**, not the latest reading, so a heavy morning
+cannot move the number.
+
+### Workout rotation
+
+Routines are **cycles, not calendars.** `workout_routines.current_cycle_index` is a cursor into
+the ordered days. Nothing is date-based: miss three days and the same day is still waiting.
+
+The cursor advances only on completion, and only when the completed day *is* the current one —
+so an out-of-order session logs normally without derailing the rotation. Rest days occupy a
+slot and advance only when explicitly completed.
+
+Sets have three states, not two: pending, completed, and **skipped**. Without the third,
+passing on a set means either logging it as done — corrupting history and the overload
+suggestion — or leaving it pending forever. Skipped sets fall out of volume, records and
+history automatically, because `exercise_history` filters on `completed_at IS NOT NULL`.
+
+### Gyms
+
+The same lift feels different across gyms: plate calibration, machine brands, cable friction.
+Sessions are stamped with a gym so that becomes measurable.
+
+- The default gym is stamped at session start — asking every time would be answered carelessly,
+  and a field filled in wrongly is worse than one left null.
+- `gym_exercise_substitutions` records "at this gym use B instead of A", applied when the
+  session starts, so a gym missing a machine does not force the same manual swap every visit.
+- `gym_exercise_performance` groups by `(gym, exercise)` and compares estimated 1RM (Epley), so
+  sets at different rep counts stay comparable. Two different lifts are never averaged into one
+  number.
+
+---
+
+## AI
+
+### Model routing
+
+Three workloads, three variables, three defaults — set per workload rather than globally:
+
+| Function | Variable | Default | Why |
+|---|---|---|---|
+| ai-coach | `OPENAI_MODEL` | `gpt-5.6-luna` | conversational, behind human review |
+| import-workout-file | `OPENAI_IMPORT_MODEL` | `gpt-5.6-luna` | every match is user-approved |
+| analyze-food | `OPENAI_VISION_MODEL` | `gpt-5.6-terra` | see below |
+
+Food analysis stays on the stronger tier deliberately. A misidentified meal looks plausible, is
+accepted without question, and then propagates into daily totals, weekly averages, body
+composition and recalculated targets. The lookup order is *explicit variable → per-workload
+default → generic `OPENAI_MODEL`* — the generic value is consulted **last** so setting it cannot
+silently drag vision onto a cheaper model.
+
+### Coach tools
+
+36 tools — 18 read, 18 write — covering every capability the app itself exposes.
+
+Editing is consolidated per entity behind an `action` enum (`manage_food_log`,
+`manage_routine`, `manage_workout_set`, …) rather than one tool per operation. Forty narrow
+tools would degrade the model's ability to pick correctly.
+
+One deliberate exception: **`propose_goal_update` does not change the goal.** It creates a
+confirmation card the user must accept, because the primary goal drives every calorie target
+and should not move on a misread.
+
+Each tool passes through three layers — a JSON schema shown to the model, a Zod schema
+validating the response, and a handler. A tool missing the middle layer is silent at build time
+and only surfaces as the coach saying it cannot do the thing. `tests/coach-tool-wiring.test.ts`
+asserts all three stay in step; it was written after exactly that bug shipped.
+
+### Food photos
+
+Two-step by design: the photo uploads, then the user adds an optional note, then both go to the
+model. The note materially improves accuracy — naming the dish beats guessing from pixels — and
+asking after the photo is the only point where the user knows what the photo actually shows.
+
+---
+
+## Database
+
+**Tables** — `profiles`, `fitness_goals`, `nutrition_targets`, `body_metrics`,
+`progress_photos`, `food_logs`, `food_log_items`, `saved_foods`, `recipes`,
+`recipe_ingredients`, `workout_routines`, `routine_days`, `routine_exercises`,
+`workout_sessions`, `workout_session_exercises`, `workout_sets`, `exercise_catalog`,
+`custom_exercises`, `gyms`, `gym_exercise_substitutions`, `routine_imports`,
+`routine_import_exercises`, `ai_conversations`, `ai_messages`, `ai_runs`
+
+**Views** — `daily_nutrition_totals`, `exercise_history`, `exercise_library`,
+`gym_exercise_performance`, `personal_bests`, `weekly_workout_summary`
+
+**Buckets** (all private, user-id-prefixed paths) — `food-photos`, `progress-photos`,
+`recipe-images`, `coach-attachments`, `custom-exercise-media`, `gym-files`
+
+Totals are never stored where they can be derived. Recipe macros sum from ingredients; daily
+nutrition sums from log items. A cached total is a total that can disagree with its own parts.
+
+---
+
+## Testing
+
+```bash
+npm test          # vitest, 219 tests
+npm run typecheck # tsc --noEmit
+npm run lint      # expo lint
+```
+
+Tests cover the `services/` layer — the arithmetic that would be silently wrong. Reference
+values are computed by hand from the source equations, not captured from the implementation, so
+a test failing means the maths changed rather than the output moved.
+
+Screens are not tested. The tradeoff is deliberate: the domain logic is where a bug produces a
+wrong number the user trusts.
+
+---
+
+## Setup
+
+```bash
 npm install
-npx supabase start
-npx supabase db reset
+cp .env.example .env    # fill in the two EXPO_PUBLIC_ values
+npx expo start
 ```
 
-Create `supabase/.env.local` from `supabase/.env.example`, then serve the Edge Functions:
+`src/lib/env.ts` validates both variables at launch and renders a configuration screen instead
+of the app if either is missing, rather than failing at the first query.
 
-```powershell
-npx supabase functions serve --env-file supabase/.env.local
+Server-only secrets are set with `supabase secrets set` and never prefixed `EXPO_PUBLIC_` —
+anything so prefixed is embedded in the client bundle.
+
+### Deployment
+
+```bash
+supabase functions deploy <name> --project-ref <ref>
 ```
 
-In another terminal, start Expo:
+Deploy from the CLI rather than pasting sources: it reads bytes from disk, which rules out
+transcription drift between the repo and production.
 
-```powershell
-npm start
-```
+iOS builds run from `.github/workflows/build-ipa.yml` on `macos-26` — Expo SDK 57 ships Swift
+packages requiring `swift-tools-version 6.2`, which only Xcode 26 provides. The workflow
+prebuilds, installs pods, builds unsigned, and publishes the IPA as a GitHub Release for
+sideloading.
 
-The current mobile environment points to the connected hosted project. To use the local stack, replace the two public Supabase values in `.env` with the values printed by `npx supabase status`.
+---
 
-### Temporary Expo Go compatibility
+## Notable decisions
 
-The native dependency layer is currently pinned to Expo SDK 54 because the App Store Expo Go client on physical iPhones supports SDK 54. Before producing an IPA, upgrade Expo one SDK at a time and run Expo's compatibility resolver after each step:
+**Nothing derived is stored.** Recipe and daily totals sum from their parts; BMI and body fat
+compute on read. Storing them invites disagreement between a cached number and its source.
 
-```powershell
-npm install expo@^55.0.0
-npx expo install --fix
-npx expo-doctor
-```
+**Weekly averages over latest readings.** Composition and trends run off calendar-week means, so
+one heavy morning cannot move a target.
 
-Repeat for SDK 56 and then SDK 57, reviewing each SDK's release notes and running the validation commands below after every upgrade.
+**Three-state sets.** Skipping is distinct from completing and from pending, so passing on work
+never corrupts history.
 
-## Apply changes to a hosted project
+**Null means unrecorded.** A session with no gym, a profile with no biological sex, a week with
+no weigh-in — these stay null and are handled explicitly, rather than being filled with a
+plausible default that later reads as fact.
 
-Link the CLI and push migrations:
-
-```powershell
-npx supabase login
-npx supabase link --project-ref your-project-ref
-npx supabase db push
-```
-
-Configure Edge Function secrets without committing them:
-
-```powershell
-npx supabase secrets set --env-file supabase/.env.local
-npx supabase functions deploy analyze-food
-npx supabase functions deploy ai-coach
-npx supabase functions deploy import-workout-file
-```
-
-`OPENAI_MODEL` and `OPENAI_VISION_MODEL` default to `gpt-5.6-terra`. Set them explicitly when you want controlled model rollouts.
-
-## Exercise catalog import
-
-The trusted import script downloads the JSON source at an exact Git commit, validates and normalizes every row, preserves source IDs and attribution, and upserts idempotently. The normal app never downloads the repository.
-
-Validate without writing:
-
-```powershell
-npm run sync:exercises -- --dry-run
-```
-
-Import into a local or hosted project from a trusted terminal:
-
-```powershell
-$env:SUPABASE_URL='https://your-project.supabase.co'
-$env:SUPABASE_SERVICE_ROLE_KEY='your-service-role-key'
-npm run sync:exercises
-Remove-Item Env:SUPABASE_SERVICE_ROLE_KEY
-```
-
-The service-role key is required only for this trusted administrative import. Never add it to Expo or commit it. See [EXERCISE_DATA_NOTICE.md](./EXERCISE_DATA_NOTICE.md) before distributing exercise media.
-
-## Validation
-
-```powershell
-npm run typecheck
-npm test
-npm run lint
-npx expo-doctor
-```
-
-Database/RLS tests live at `supabase/tests/database/rls.sql`. With the local stack running:
-
-```powershell
-npx supabase test db
-```
-
-Unit tests do not call the live OpenAI API. They cover unit conversion, macro aggregation, workout volume, progressive overload, routine validation, strict food output validation, moving averages, recomposition summaries, unknown AI exercise IDs, and safe goal-update proposals.
-
-## Security and privacy
-
-- Every private table has RLS; nested records prove ownership through their parent.
-- `exercise_catalog` is read-only for authenticated app users.
-- Food, progress-photo, and temporary gym-file buckets are private and use user-owned paths.
-- Progress photos display through one-hour signed URLs; public URLs are never generated.
-- Food source photos are deleted after confirmation by default and can be retained privately in Settings.
-- All AI functions require a valid user JWT and use that user’s Supabase client, so RLS remains the authorization boundary.
-- The coach exposes bounded domain tools, never arbitrary SQL. AI-created routines are always drafts and require explicit activation through the app.
-- OpenAI requests use `store: false`, a hashed safety identifier, strict schemas, and bounded timeouts. Hidden reasoning is not stored.
-
-## Project layout
-
-```text
-src/app/                 Expo Router screens
-src/features/            Feature APIs, hooks, services, and components
-src/lib/supabase/        Typed Supabase client
-src/lib/openai-types/    Shared AI response validation
-src/store/               Persisted transient workout state
-src/types/               Generated database types and domain aliases
-scripts/                 Trusted exercise synchronization
-supabase/migrations/     Versioned schema, RLS, views, and RPCs
-supabase/functions/      Authenticated AI Edge Functions
-supabase/tests/          Database and RLS assertions
-```
-
-## AI behavior
-
-`ai-coach` uses exact, strict tools for user profile, exercise search/details, active routine, training history, exercise history, nutrition summary, body metrics, training aggregates, goal proposals, and draft creation. It retrieves context only when needed and caps tool iterations. Routine creation verifies every exercise ID before any routine row is written. Goal changes require an explicit confirmation card; confirmations are persisted, reject stale proposals, and retain prior goals as history.
-
-`analyze-food` downloads only an authenticated user-owned private image and requests strict structured food estimates. The client shows confidence, warnings, editable portions/macros, and requires confirmation before saving. Photo estimates are always labeled as estimates.
-
-`import-workout-file` accepts a private workout PDF, Word document, text file, CSV, or spreadsheet up to 6 MB. It extracts the complete ordered split—including rest slots and A/B alternation—matches exercises to the trusted catalog, creates only a reviewable draft, and deletes the temporary upload after processing.
-
-## Current hosted setup
-
-The connected Supabase project has all migrations applied, 1,324 normalized exercise records imported from source commit `6f3031b3b2b2934890b6f26376d7e22bfc308d6a`, and all three Edge Functions deployed with JWT verification. AI calls require the project’s `OPENAI_API_KEY` secret to be configured by the project owner.
+**The keyboard is measured, not inferred.** `Screen` reads the keyboard's own frame and the
+container's position rather than trusting `KeyboardAvoidingView`, which infers padding from its
+own frame and fails silently when an ancestor offsets it.
