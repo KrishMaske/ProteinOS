@@ -150,6 +150,31 @@ export const coachTools = [
     }),
   },
   {
+    type: 'function', name: 'create_saved_food', strict: true,
+    description: 'Save a food so it can be logged again in one tap, with the macros for one serving. Use after logging something the user eats regularly, or when they ask to save it. Saving does not log it; call log_saved_food as well if they also ate it now.',
+    parameters: strictObject({
+      name: { type: 'string', minLength: 1, maxLength: 160 },
+      servingQuantity: nullableNumber,
+      servingUnit: nullableString,
+      servingGrams: nullableNumber,
+      calories: { type: 'number', minimum: 0 },
+      proteinGrams: { type: 'number', minimum: 0 },
+      carbohydrateGrams: { type: 'number', minimum: 0 },
+      fatGrams: { type: 'number', minimum: 0 },
+      fiberGrams: nullableNumber,
+    }),
+  },
+  {
+    type: 'function', name: 'log_body_metric', strict: true,
+    description: 'Record a body measurement the user reports. Weight drives their calorie targets and body composition, so log it when they state one. Values are metric: convert from pounds or inches before calling.',
+    parameters: strictObject({
+      weightKg: nullableNumber,
+      waistCm: nullableNumber,
+      bodyFatPercent: nullableNumber,
+      notes: nullableString,
+    }),
+  },
+  {
     type: 'function', name: 'get_active_routine', strict: true,
     description: 'Get the active routine and its ordered days and exercises.',
     parameters: strictObject({ includeExercises: { type: 'boolean' } }),
@@ -265,6 +290,23 @@ const toolInputSchemas: Record<string, z.ZodType> = {
   get_gym_comparison: z.object({
     exerciseKey: nullableText,
     limit: z.number().int().min(1).max(50),
+  }).strict(),
+  create_saved_food: z.object({
+    name: z.string().trim().min(1).max(160),
+    servingQuantity: z.number().min(0).nullable(),
+    servingUnit: nullableText,
+    servingGrams: z.number().min(0).nullable(),
+    calories: z.number().min(0),
+    proteinGrams: z.number().min(0),
+    carbohydrateGrams: z.number().min(0),
+    fatGrams: z.number().min(0),
+    fiberGrams: z.number().min(0).nullable(),
+  }).strict(),
+  log_body_metric: z.object({
+    weightKg: z.number().min(20).max(500).nullable(),
+    waistCm: z.number().min(30).max(300).nullable(),
+    bodyFatPercent: z.number().min(1).max(75).nullable(),
+    notes: nullableText,
   }).strict(),
   get_active_routine: z.object({ includeExercises: z.boolean() }).strict(),
   search_exercises: z.object({ query: z.string(), bodyPart: nullableText, target: nullableText, equipment: nullableText, limit: z.number().int().min(1).max(20) }).strict(),
@@ -611,6 +653,37 @@ export async function executeCoachTool(client: SupabaseClient, userId: string, n
       });
       if (error) throw error;
       return { ok: true, loggedDate, mealType: args.mealType, servings: args.servings, log: data };
+    }
+    case 'create_saved_food': {
+      const { data, error } = await client.from('saved_foods').insert({
+        user_id: userId,
+        name: args.name.trim(),
+        serving_quantity: args.servingQuantity,
+        serving_unit: args.servingUnit,
+        serving_grams: args.servingGrams,
+        calories: args.calories,
+        protein_grams: args.proteinGrams,
+        carbohydrate_grams: args.carbohydrateGrams,
+        fat_grams: args.fatGrams,
+        fiber_grams: args.fiberGrams,
+      }).select('id,name').single();
+      if (error) throw error;
+      return { ok: true, savedFoodId: data.id, name: data.name };
+    }
+    case 'log_body_metric': {
+      if (args.weightKg === null && args.waistCm === null && args.bodyFatPercent === null) {
+        throw new Error('Give at least one measurement to record');
+      }
+      const { data, error } = await client.from('body_metrics').insert({
+        user_id: userId,
+        measured_at: new Date().toISOString(),
+        weight_kg: args.weightKg,
+        waist_cm: args.waistCm,
+        body_fat_percent: args.bodyFatPercent,
+        notes: args.notes,
+      }).select('id,measured_at,weight_kg,waist_cm,body_fat_percent').single();
+      if (error) throw error;
+      return { ok: true, metric: data };
     }
     case 'create_recipe': {
       const { data: created, error } = await client.from('recipes').insert({
