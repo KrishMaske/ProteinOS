@@ -175,6 +175,100 @@ export const coachTools = [
     }),
   },
   {
+    type: 'function', name: 'manage_food_log', strict: true,
+    description: 'Correct or remove a meal already logged. update changes its name or meal; set_item_count changes how many of a single-item entry, scaling its macros; update_item rewrites one item’s macros; delete removes the whole entry. Get ids from get_nutrition_summary.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['update', 'delete', 'set_item_count', 'update_item'] },
+      foodLogId: nullableString,
+      itemId: nullableString,
+      name: nullableString,
+      mealType: { type: ['string', 'null'], enum: ['breakfast', 'lunch', 'dinner', 'snacks', 'other', null] },
+      count: nullableNumber,
+      calories: nullableNumber,
+      proteinGrams: nullableNumber,
+      carbohydrateGrams: nullableNumber,
+      fatGrams: nullableNumber,
+    }),
+  },
+  {
+    type: 'function', name: 'manage_saved_food', strict: true,
+    description: 'Update or delete a saved food. Deleting leaves meals already logged from it untouched. Get ids from get_saved_foods.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['update', 'delete'] },
+      savedFoodId: { type: 'string', minLength: 1 },
+      name: nullableString,
+      servingQuantity: nullableNumber,
+      servingUnit: nullableString,
+      servingGrams: nullableNumber,
+      calories: nullableNumber,
+      proteinGrams: nullableNumber,
+      carbohydrateGrams: nullableNumber,
+      fatGrams: nullableNumber,
+    }),
+  },
+  {
+    type: 'function', name: 'manage_recipe', strict: true,
+    description: 'Update or delete a recipe. Updating ingredients replaces the whole list, so send every ingredient, not only the changed ones. Get ids from get_recipes.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['update', 'delete'] },
+      recipeId: { type: 'string', minLength: 1 },
+      name: nullableString,
+      description: nullableString,
+      instructions: nullableString,
+      servings: nullableNumber,
+      ingredients: {
+        type: ['array', 'null'],
+        maxItems: 40,
+        items: strictObject({
+          name: { type: 'string', minLength: 1, maxLength: 160 },
+          quantity: nullableNumber,
+          unit: nullableString,
+          calories: { type: 'number', minimum: 0 },
+          proteinGrams: { type: 'number', minimum: 0 },
+          carbohydrateGrams: { type: 'number', minimum: 0 },
+          fatGrams: { type: 'number', minimum: 0 },
+        }),
+      },
+    }),
+  },
+  {
+    type: 'function', name: 'manage_body_metric', strict: true,
+    description: 'Update or delete a recorded measurement. Get ids from get_body_metrics.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['update', 'delete'] },
+      metricId: { type: 'string', minLength: 1 },
+      weightKg: nullableNumber,
+      waistCm: nullableNumber,
+      bodyFatPercent: nullableNumber,
+      notes: nullableString,
+    }),
+  },
+  {
+    type: 'function', name: 'manage_gym', strict: true,
+    description: 'Create, rename, delete a gym, or make one the default that new workouts are tagged with. Deleting leaves past sessions logged but no longer attributed. Get ids from get_gym_comparison.',
+    parameters: strictObject({
+      action: { type: 'string', enum: ['create', 'update', 'delete', 'set_default'] },
+      gymId: nullableString,
+      name: nullableString,
+      notes: nullableString,
+    }),
+  },
+  {
+    type: 'function', name: 'update_profile', strict: true,
+    description: 'Change the settings that drive the calorie and macro targets. Send only the fields being changed; the rest as null. Height and weights are metric. These feed the calorie and macro targets, which are recalculated in the app rather than here, so tell the user to tap Recalculate targets in Settings for the change to take effect.',
+    parameters: strictObject({
+      displayName: nullableString,
+      heightCm: nullableNumber,
+      targetWeightKg: nullableNumber,
+      goalBodyFatMin: nullableNumber,
+      goalBodyFatMax: nullableNumber,
+      trainingDaysPerWeek: nullableNumber,
+      preferredSessionMinutes: nullableNumber,
+      dailyActivityLevel: { type: ['string', 'null'], enum: ['sedentary', 'light', 'moderate', 'very_active', null] },
+      preferredUnits: { type: ['string', 'null'], enum: ['metric', 'imperial', null] },
+    }),
+  },
+  {
     type: 'function', name: 'get_active_routine', strict: true,
     description: 'Get the active routine and its ordered days and exercises.',
     parameters: strictObject({ includeExercises: { type: 'boolean' } }),
@@ -307,6 +401,72 @@ const toolInputSchemas: Record<string, z.ZodType> = {
     waistCm: z.number().min(30).max(300).nullable(),
     bodyFatPercent: z.number().min(1).max(75).nullable(),
     notes: nullableText,
+  }).strict(),
+  manage_food_log: z.object({
+    action: z.enum(['update', 'delete', 'set_item_count', 'update_item']),
+    foodLogId: z.string().min(1).nullable(),
+    itemId: z.string().min(1).nullable(),
+    name: nullableText,
+    mealType: z.enum(mealTypes).nullable(),
+    count: z.number().min(0.01).max(999).nullable(),
+    calories: z.number().min(0).nullable(),
+    proteinGrams: z.number().min(0).nullable(),
+    carbohydrateGrams: z.number().min(0).nullable(),
+    fatGrams: z.number().min(0).nullable(),
+  }).strict(),
+  manage_saved_food: z.object({
+    action: z.enum(['update', 'delete']),
+    savedFoodId: z.string().min(1),
+    name: nullableText,
+    servingQuantity: z.number().min(0).nullable(),
+    servingUnit: nullableText,
+    servingGrams: z.number().min(0).nullable(),
+    calories: z.number().min(0).nullable(),
+    proteinGrams: z.number().min(0).nullable(),
+    carbohydrateGrams: z.number().min(0).nullable(),
+    fatGrams: z.number().min(0).nullable(),
+  }).strict(),
+  manage_recipe: z.object({
+    action: z.enum(['update', 'delete']),
+    recipeId: z.string().min(1),
+    name: nullableText,
+    description: nullableText,
+    instructions: nullableText,
+    servings: z.number().min(0.25).max(100).nullable(),
+    ingredients: z.array(z.object({
+      name: z.string().trim().min(1).max(160),
+      quantity: z.number().min(0).nullable(),
+      unit: nullableText,
+      calories: z.number().min(0),
+      proteinGrams: z.number().min(0),
+      carbohydrateGrams: z.number().min(0),
+      fatGrams: z.number().min(0),
+    }).strict()).max(40).nullable(),
+  }).strict(),
+  manage_body_metric: z.object({
+    action: z.enum(['update', 'delete']),
+    metricId: z.string().min(1),
+    weightKg: z.number().min(20).max(500).nullable(),
+    waistCm: z.number().min(30).max(300).nullable(),
+    bodyFatPercent: z.number().min(1).max(75).nullable(),
+    notes: nullableText,
+  }).strict(),
+  manage_gym: z.object({
+    action: z.enum(['create', 'update', 'delete', 'set_default']),
+    gymId: z.string().min(1).nullable(),
+    name: nullableText,
+    notes: nullableText,
+  }).strict(),
+  update_profile: z.object({
+    displayName: nullableText,
+    heightCm: z.number().min(80).max(260).nullable(),
+    targetWeightKg: z.number().min(20).max(500).nullable(),
+    goalBodyFatMin: z.number().min(2).max(75).nullable(),
+    goalBodyFatMax: z.number().min(2).max(75).nullable(),
+    trainingDaysPerWeek: z.number().int().min(0).max(7).nullable(),
+    preferredSessionMinutes: z.number().int().min(15).max(240).nullable(),
+    dailyActivityLevel: z.enum(['sedentary', 'light', 'moderate', 'very_active']).nullable(),
+    preferredUnits: z.enum(['metric', 'imperial']).nullable(),
   }).strict(),
   get_active_routine: z.object({ includeExercises: z.boolean() }).strict(),
   search_exercises: z.object({ query: z.string(), bodyPart: nullableText, target: nullableText, equipment: nullableText, limit: z.number().int().min(1).max(20) }).strict(),
@@ -684,6 +844,177 @@ export async function executeCoachTool(client: SupabaseClient, userId: string, n
       }).select('id,measured_at,weight_kg,waist_cm,body_fat_percent').single();
       if (error) throw error;
       return { ok: true, metric: data };
+    }
+    case 'manage_food_log': {
+      if (args.action === 'delete') {
+        if (!args.foodLogId) throw new Error('foodLogId is required to delete a meal');
+        const { error } = await client.from('food_logs').delete().eq('id', args.foodLogId);
+        if (error) throw error;
+        return { ok: true, deleted: args.foodLogId };
+      }
+      if (args.action === 'update') {
+        if (!args.foodLogId) throw new Error('foodLogId is required');
+        // Only the stated fields move; the rest keep whatever the user already had.
+        const patch: Record<string, unknown> = {};
+        if (args.name !== null) patch.name = args.name.trim();
+        if (args.mealType !== null) patch.meal_type = args.mealType;
+        if (!Object.keys(patch).length) throw new Error('Give a name or meal to change');
+        const { error } = await client.from('food_logs').update(patch).eq('id', args.foodLogId);
+        if (error) throw error;
+        return { ok: true, foodLogId: args.foodLogId, changed: Object.keys(patch) };
+      }
+      if (args.action === 'set_item_count') {
+        if (!args.itemId || args.count === null) throw new Error('itemId and count are required');
+        // Goes through the RPC so the macros scale with the count in one statement.
+        const { data, error } = await client.rpc('set_food_log_item_quantity', {
+          target_item_id: args.itemId, target_quantity: args.count,
+        });
+        if (error) throw error;
+        return { ok: true, item: data };
+      }
+      if (!args.itemId) throw new Error('itemId is required');
+      const itemPatch: Record<string, unknown> = {};
+      if (args.name !== null) itemPatch.name = args.name.trim();
+      if (args.calories !== null) itemPatch.calories = args.calories;
+      if (args.proteinGrams !== null) itemPatch.protein_grams = args.proteinGrams;
+      if (args.carbohydrateGrams !== null) itemPatch.carbohydrate_grams = args.carbohydrateGrams;
+      if (args.fatGrams !== null) itemPatch.fat_grams = args.fatGrams;
+      if (!Object.keys(itemPatch).length) throw new Error('Give at least one field to change');
+      const { error: itemError } = await client.from('food_log_items').update(itemPatch).eq('id', args.itemId);
+      if (itemError) throw itemError;
+      return { ok: true, itemId: args.itemId, changed: Object.keys(itemPatch) };
+    }
+    case 'manage_saved_food': {
+      if (args.action === 'delete') {
+        const { error } = await client.from('saved_foods').delete().eq('id', args.savedFoodId);
+        if (error) throw error;
+        return { ok: true, deleted: args.savedFoodId };
+      }
+      const patch: Record<string, unknown> = {};
+      if (args.name !== null) patch.name = args.name.trim();
+      if (args.servingQuantity !== null) patch.serving_quantity = args.servingQuantity;
+      if (args.servingUnit !== null) patch.serving_unit = args.servingUnit;
+      if (args.servingGrams !== null) patch.serving_grams = args.servingGrams;
+      if (args.calories !== null) patch.calories = args.calories;
+      if (args.proteinGrams !== null) patch.protein_grams = args.proteinGrams;
+      if (args.carbohydrateGrams !== null) patch.carbohydrate_grams = args.carbohydrateGrams;
+      if (args.fatGrams !== null) patch.fat_grams = args.fatGrams;
+      if (!Object.keys(patch).length) throw new Error('Give at least one field to change');
+      const { error } = await client.from('saved_foods').update(patch).eq('id', args.savedFoodId);
+      if (error) throw error;
+      return { ok: true, savedFoodId: args.savedFoodId, changed: Object.keys(patch) };
+    }
+    case 'manage_recipe': {
+      if (args.action === 'delete') {
+        const { error } = await client.from('recipes').delete().eq('id', args.recipeId);
+        if (error) throw error;
+        return { ok: true, deleted: args.recipeId };
+      }
+      const patch: Record<string, unknown> = {};
+      if (args.name !== null) patch.name = args.name.trim();
+      if (args.description !== null) patch.description = args.description;
+      if (args.instructions !== null) patch.instructions = args.instructions;
+      if (args.servings !== null) patch.servings = args.servings;
+      if (Object.keys(patch).length) {
+        const { error } = await client.from('recipes').update(patch).eq('id', args.recipeId);
+        if (error) throw error;
+      }
+      if (args.ingredients !== null) {
+        // Replaced wholesale, matching the editor: a partial list would silently drop
+        // whatever was left out.
+        const { error: clearError } = await client.from('recipe_ingredients').delete().eq('recipe_id', args.recipeId);
+        if (clearError) throw clearError;
+        if (args.ingredients.length) {
+          const { error } = await client.from('recipe_ingredients').insert(
+            args.ingredients.map((item: any, index: number) => ({
+              recipe_id: args.recipeId,
+              name: item.name.trim(),
+              quantity: item.quantity,
+              unit: item.unit,
+              calories: item.calories,
+              protein_grams: item.proteinGrams,
+              carbohydrate_grams: item.carbohydrateGrams,
+              fat_grams: item.fatGrams,
+              position: index,
+            })),
+          );
+          if (error) throw error;
+        }
+      }
+      return { ok: true, recipeId: args.recipeId, replacedIngredients: args.ingredients !== null };
+    }
+    case 'manage_body_metric': {
+      if (args.action === 'delete') {
+        const { error } = await client.from('body_metrics').delete().eq('id', args.metricId);
+        if (error) throw error;
+        return { ok: true, deleted: args.metricId };
+      }
+      const patch: Record<string, unknown> = {};
+      if (args.weightKg !== null) patch.weight_kg = args.weightKg;
+      if (args.waistCm !== null) patch.waist_cm = args.waistCm;
+      if (args.bodyFatPercent !== null) patch.body_fat_percent = args.bodyFatPercent;
+      if (args.notes !== null) patch.notes = args.notes;
+      if (!Object.keys(patch).length) throw new Error('Give at least one measurement to change');
+      const { error } = await client.from('body_metrics').update(patch).eq('id', args.metricId);
+      if (error) throw error;
+      return { ok: true, metricId: args.metricId, changed: Object.keys(patch) };
+    }
+    case 'manage_gym': {
+      if (args.action === 'create') {
+        if (!args.name) throw new Error('name is required to create a gym');
+        const { count } = await client.from('gyms').select('id', { count: 'exact', head: true });
+        const isDefault = (count ?? 0) === 0;
+        const { data, error } = await client.from('gyms')
+          .insert({ user_id: userId, name: args.name.trim(), notes: args.notes, is_default: isDefault })
+          .select('id,name,is_default').single();
+        if (error) throw error;
+        return { ok: true, gym: data };
+      }
+      if (!args.gymId) throw new Error('gymId is required');
+      if (args.action === 'delete') {
+        const { error } = await client.from('gyms').delete().eq('id', args.gymId);
+        if (error) throw error;
+        return { ok: true, deleted: args.gymId };
+      }
+      if (args.action === 'set_default') {
+        // Cleared first: a partial unique index allows only one default per user.
+        const { error: clearError } = await client.from('gyms').update({ is_default: false }).eq('is_default', true);
+        if (clearError) throw clearError;
+        const { error } = await client.from('gyms').update({ is_default: true }).eq('id', args.gymId);
+        if (error) throw error;
+        return { ok: true, defaultGymId: args.gymId };
+      }
+      const patch: Record<string, unknown> = {};
+      if (args.name !== null) patch.name = args.name.trim();
+      if (args.notes !== null) patch.notes = args.notes;
+      if (!Object.keys(patch).length) throw new Error('Give a name or notes to change');
+      const { error } = await client.from('gyms').update(patch).eq('id', args.gymId);
+      if (error) throw error;
+      return { ok: true, gymId: args.gymId, changed: Object.keys(patch) };
+    }
+    case 'update_profile': {
+      const patch: Record<string, unknown> = {};
+      if (args.displayName !== null) patch.display_name = args.displayName.trim();
+      if (args.heightCm !== null) patch.height_cm = args.heightCm;
+      if (args.targetWeightKg !== null) patch.target_weight_kg = args.targetWeightKg;
+      if (args.goalBodyFatMin !== null) patch.goal_body_fat_min = args.goalBodyFatMin;
+      if (args.goalBodyFatMax !== null) patch.goal_body_fat_max = args.goalBodyFatMax;
+      if (args.trainingDaysPerWeek !== null) patch.training_days_per_week = args.trainingDaysPerWeek;
+      if (args.preferredSessionMinutes !== null) patch.preferred_session_minutes = args.preferredSessionMinutes;
+      if (args.dailyActivityLevel !== null) patch.daily_activity_level = args.dailyActivityLevel;
+      if (args.preferredUnits !== null) patch.preferred_units = args.preferredUnits;
+      if (!Object.keys(patch).length) throw new Error('Give at least one setting to change');
+      if (patch.goal_body_fat_min !== undefined && patch.goal_body_fat_max !== undefined
+        && Number(patch.goal_body_fat_min) > Number(patch.goal_body_fat_max)) {
+        throw new Error('The goal body fat minimum cannot exceed the maximum');
+      }
+      const { error } = await client.from('profiles').update(patch).eq('id', userId);
+      if (error) throw error;
+      // The target maths lives in the app, so a changed input leaves the stored target
+      // stale until it is recalculated there. Flagged so Coach says so.
+      const affectsTargets = ['height_cm', 'target_weight_kg', 'training_days_per_week',
+        'preferred_session_minutes', 'daily_activity_level'].some((key) => key in patch);
+      return { ok: true, changed: Object.keys(patch), targetsNeedRecalculating: affectsTargets };
     }
     case 'create_recipe': {
       const { data: created, error } = await client.from('recipes').insert({
