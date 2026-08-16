@@ -30,6 +30,85 @@ left blank rather than filled with a guess.
 
 ---
 
+## Network and protocols
+
+There is no bespoke API server. The client talks to Supabase over HTTP, and **Postgres row-level
+security is the authorization layer** — the same policies apply whether a request comes from the
+app, the AI coach, or a raw `curl`. That is the single most consequential infrastructure
+decision here: there is no middle tier that could forget a permission check, because there is no
+middle tier.
+
+### What is actually on the wire
+
+| Surface | Protocol | Path | Used for |
+|---|---|---|---|
+| **PostgREST** | HTTPS · REST/JSON | `/rest/v1/<table>` | all table and view reads and writes |
+| **PostgREST RPC** | HTTPS · JSON-RPC-ish `POST` | `/rest/v1/rpc/<fn>` | the 21 Postgres functions |
+| **GoTrue** | HTTPS · REST/JSON | `/auth/v1/*` | sign-in, sign-up, token refresh, password change |
+| **Storage** | HTTPS · REST + binary body | `/storage/v1/object/*` | 6 private buckets |
+| **Edge Functions** | HTTPS · `POST` JSON | `/functions/v1/<name>` | the 5 Deno functions |
+| **OpenAI Responses** | HTTPS · JSON | `api.openai.com/v1/responses` | coach, food analysis, routine import |
+| **OpenAI Files** | HTTPS · `multipart/form-data` | `api.openai.com/v1/files` | PDFs, server-side only |
+
+`supabase-js` is a typed client over PostgREST, not an ORM. `.from('gyms').select('*')` compiles
+to `GET /rest/v1/gyms?select=*`; `.rpc('skip_routine_day', {...})` to
+`POST /rest/v1/rpc/skip_routine_day`. The generated `Database` type in `src/types/database.ts`
+is what makes those calls type-safe end to end — it is regenerated from the live schema, never
+hand-edited.
+
+### Not used, and why
+
+**No gRPC.** Postgres speaks its own wire protocol and PostgREST fronts it with REST; there is no
+service mesh to justify protobufs or codegen.
+
+**No GraphQL.** PostgREST's embedded resource syntax already does the one thing GraphQL would be
+wanted for — `select('*, routine_days(*, routine_exercises(*, exercise_catalog(name)))')` fetches
+a whole routine tree in one round trip, with RLS applied at every level.
+
+**No WebSockets, despite Supabase Realtime being available.** The data is single-user and
+single-device in practice; a workout in progress does not need pushing to another client.
+Freshness comes from TanStack Query invalidation after each mutation, which is cheaper and has no
+reconnection semantics to get wrong. The one Realtime reference in the codebase is a **stub
+socket** injected during static web rendering, purely to stop the client opening a connection in
+an environment with no `window`.
+
+**No polling.** Nothing runs on an interval. Every refresh is triggered by a mutation
+invalidating the queries it affects.
+
+### Auth and session handling
+
+Supabase issues a **JWT** carried as `Authorization: Bearer` on every request. Postgres reads
+`auth.uid()` out of it inside RLS policies and `security invoker` functions, so identity travels
+with the request rather than being re-derived per endpoint.
+
+Sessions persist to `AsyncStorage` and refresh automatically, but the refresh timer is bound to
+`AppState`: it starts when the app becomes active and stops when it backgrounds, so a
+backgrounded app is not waking to refresh tokens it is not using.
+
+Edge functions build a **per-request client from the caller's own JWT** rather than using the
+service role. They therefore run with the caller's permissions and cannot read or write anything
+the user could not — the AI coach included. That is what makes 18 write tools safe to expose.
+
+### Runtime
+
+- **Hermes** — Expo's default JS engine; bytecode precompiled at build time
+- **New Architecture** — Fabric renderer and TurboModules, default from SDK 57
+- **React Compiler** — enabled via `experiments.reactCompiler`, auto-memoising components
+- **Metro** — bundler, with `tsconfig` path aliases (`@/*` → `src/*`)
+- **Deno** — the edge function runtime; functions are plain TypeScript with `npm:` specifiers
+- **expo-router typed routes** — routes are generated into the type system, so a bad `href` is a
+  compile error rather than a dead link
+
+### Resilience
+
+Every outbound OpenAI call carries an explicit `AbortSignal.timeout` (45s default, 60s for
+vision) and normalises failures into a small typed error that keeps status, code and request id
+while **discarding the upstream body** — so nothing an external service returns is persisted or
+echoed to the user. Failure stages are recorded in `ai_runs` so a failed run is diagnosable
+after the fact.
+
+---
+
 ## Architecture
 
 ### Layering
