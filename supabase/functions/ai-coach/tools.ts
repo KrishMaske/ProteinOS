@@ -257,12 +257,15 @@ export const coachTools = [
   },
   {
     type: 'function', name: 'manage_gym', strict: true,
-    description: 'Create, rename, delete a gym, or make one the default that new workouts are tagged with. Deleting leaves past sessions logged but no longer attributed. Get ids from get_gym_comparison.',
+    description: 'Manage gyms and their standing exercise swaps. create, update, delete and set_default cover the gym itself. add_substitution records "at this gym use B instead of A" so workouts started there open with the replacement already in place; remove_substitution drops that rule. Exercise keys start with catalog: or custom:.',
     parameters: strictObject({
-      action: { type: 'string', enum: ['create', 'update', 'delete', 'set_default'] },
+      action: { type: 'string', enum: ['create', 'update', 'delete', 'set_default', 'add_substitution', 'remove_substitution'] },
       gymId: nullableString,
       name: nullableString,
       notes: nullableString,
+      substitutionId: nullableString,
+      fromExerciseKey: nullableString,
+      toExerciseKey: nullableString,
     }),
   },
   {
@@ -540,7 +543,10 @@ const toolInputSchemas: Record<string, z.ZodType> = {
     notes: nullableText,
   }).strict(),
   manage_gym: z.object({
-    action: z.enum(['create', 'update', 'delete', 'set_default']),
+    action: z.enum(['create', 'update', 'delete', 'set_default', 'add_substitution', 'remove_substitution']),
+    substitutionId: nullableText,
+    fromExerciseKey: nullableText,
+    toExerciseKey: nullableText,
     gymId: z.string().min(1).nullable(),
     name: nullableText,
     notes: nullableText,
@@ -1106,7 +1112,40 @@ export async function executeCoachTool(client: SupabaseClient, userId: string, n
         if (error) throw error;
         return { ok: true, gym: data };
       }
+      if (args.action === 'remove_substitution') {
+        if (!args.substitutionId) throw new Error('substitutionId is required');
+        const { error } = await client.from('gym_exercise_substitutions').delete().eq('id', args.substitutionId);
+        if (error) throw error;
+        return { ok: true, removed: args.substitutionId };
+      }
       if (!args.gymId) throw new Error('gymId is required');
+      if (args.action === 'add_substitution') {
+        if (!args.fromExerciseKey || !args.toExerciseKey) {
+          throw new Error('fromExerciseKey and toExerciseKey are required');
+        }
+        const reference = (key: string) => {
+          const separator = key.indexOf(':');
+          const kind = key.slice(0, separator);
+          const id = key.slice(separator + 1);
+          if (!id || (kind !== 'catalog' && kind !== 'custom')) {
+            throw new Error('Exercise keys must start with catalog: or custom:');
+          }
+          return kind === 'catalog'
+            ? { exercise_id: id, custom_exercise_id: null }
+            : { exercise_id: null, custom_exercise_id: id };
+        };
+        const from = reference(args.fromExerciseKey);
+        const to = reference(args.toExerciseKey);
+        const { error } = await client.from('gym_exercise_substitutions').upsert({
+          user_id: userId,
+          gym_id: args.gymId,
+          ...from,
+          substitute_exercise_id: to.exercise_id,
+          substitute_custom_exercise_id: to.custom_exercise_id,
+        }, { onConflict: 'gym_id,exercise_id,custom_exercise_id' });
+        if (error) throw error;
+        return { ok: true, gymId: args.gymId, from: args.fromExerciseKey, to: args.toExerciseKey };
+      }
       if (args.action === 'delete') {
         const { error } = await client.from('gyms').delete().eq('id', args.gymId);
         if (error) throw error;

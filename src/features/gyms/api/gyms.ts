@@ -78,14 +78,50 @@ export async function getGymComparison(exerciseKey?: string) {
 
 export type GymSubstitution = Tables<'gym_exercise_substitutions'>;
 
-/** Every standing swap for a gym, so the workout screen can show what will change. */
-export async function getGymSubstitutions(gymId: string) {
+export type GymSubstitutionWithNames = GymSubstitution & { fromName: string; toName: string };
+
+/**
+ * Standing swaps for a gym, resolved to names. Names are looked up in a second pass rather
+ * than embedded, because two foreign keys point at the same catalog table and the embed
+ * would have to be disambiguated by constraint name, which is brittle.
+ */
+export async function getGymSubstitutions(gymId: string): Promise<GymSubstitutionWithNames[]> {
   const { data, error } = await supabase
     .from('gym_exercise_substitutions')
     .select('*')
     .eq('gym_id', gymId);
   if (error) throw error;
-  return data ?? [];
+  const rules = data ?? [];
+  if (!rules.length) return [];
+
+  const catalogIds = [...new Set(rules.flatMap((rule) =>
+    [rule.exercise_id, rule.substitute_exercise_id].filter((id): id is string => Boolean(id))))];
+  const customIds = [...new Set(rules.flatMap((rule) =>
+    [rule.custom_exercise_id, rule.substitute_custom_exercise_id].filter((id): id is string => Boolean(id))))];
+
+  const [catalog, custom] = await Promise.all([
+    catalogIds.length
+      ? supabase.from('exercise_catalog').select('id,name').in('id', catalogIds)
+      : Promise.resolve({ data: [], error: null }),
+    customIds.length
+      ? supabase.from('custom_exercises').select('id,name').in('id', customIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (catalog.error) throw catalog.error;
+  if (custom.error) throw custom.error;
+
+  const names = new Map<string, string>([
+    ...(catalog.data ?? []).map((row) => [row.id, row.name] as const),
+    ...(custom.data ?? []).map((row) => [row.id, row.name] as const),
+  ]);
+  const nameFor = (catalogId: string | null, customId: string | null) =>
+    names.get(catalogId ?? customId ?? '') ?? 'Unknown exercise';
+
+  return rules.map((rule) => ({
+    ...rule,
+    fromName: nameFor(rule.exercise_id, rule.custom_exercise_id),
+    toName: nameFor(rule.substitute_exercise_id, rule.substitute_custom_exercise_id),
+  }));
 }
 
 /**

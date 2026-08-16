@@ -11,6 +11,8 @@ import {
   useDeleteGym,
   useGymComparison,
   useGyms,
+  useGymSubstitutions,
+  useRemoveGymSubstitution,
   useSetDefaultGym,
 } from '@/features/gyms/hooks/use-gyms';
 import { useAppTheme } from '@/hooks/use-app-theme';
@@ -79,6 +81,7 @@ export default function GymsScreen() {
                   ) : null}
                 </View>
                 {gym.notes ? <AppText variant="caption" color={colors.muted} numberOfLines={2}>{gym.notes}</AppText> : null}
+                <GymSubstitutions gymId={gym.id} />
               </View>
               {!gym.is_default ? (
                 <Pressable
@@ -120,6 +123,39 @@ export default function GymsScreen() {
       <GymComparison />
       {remove.error ? <AppText variant="caption" color={colors.danger}>{remove.error.message}</AppText> : null}
     </Screen>
+  );
+}
+
+/**
+ * Standing swaps are shown wherever the gym is managed. A rule that silently changes a
+ * workout has to be visible and removable, otherwise it is indistinguishable from a bug.
+ */
+function GymSubstitutions({ gymId }: { gymId: string }) {
+  const { colors } = useAppTheme();
+  const query = useGymSubstitutions(gymId);
+  const remove = useRemoveGymSubstitution();
+  const rules = query.data ?? [];
+  if (!rules.length) return null;
+
+  return (
+    <View style={styles.substitutions}>
+      {rules.map((rule) => (
+        <View key={rule.id} style={styles.substitutionRow}>
+          <Ionicons name="swap-horizontal" size={14} color={colors.muted} />
+          <AppText variant="caption" color={colors.muted} style={styles.flex} numberOfLines={2}>
+            {rule.fromName} → {rule.toName}
+          </AppText>
+          <Pressable
+            accessibilityLabel={`Stop swapping ${rule.fromName} here`}
+            hitSlop={8}
+            disabled={remove.isPending}
+            onPress={() => remove.mutate(rule.id)}
+            style={({ pressed }) => [styles.removeRule, { opacity: pressed ? 0.5 : 1 }]}>
+            <Ionicons name="close" size={16} color={colors.muted} />
+          </Pressable>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -174,6 +210,9 @@ const styles = StyleSheet.create({
   nameRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   badge: { flexShrink: 0, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 2 },
   iconAction: { width: 44, height: 44, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  substitutions: { minWidth: 0, gap: 2, paddingTop: spacing.xs },
+  substitutionRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  removeRule: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   comparisonRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   flex: { flex: 1, minWidth: 0, gap: spacing.xs },
 });
