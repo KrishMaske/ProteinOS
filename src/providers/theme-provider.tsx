@@ -100,9 +100,8 @@ export function AppThemeProvider({ children }: PropsWithChildren) {
 
   useEffect(() => {
     if (!hydrated) return;
-    // null hands control back to the device on React Native 0.81; 0.86 renames this to
-    // 'unspecified', so this line changes when the project moves back to SDK 57.
-    Appearance.setColorScheme(preference === 'system' ? null : preference);
+    // 'unspecified' hands control back to the device. React Native 0.81 spelled this null.
+    Appearance.setColorScheme(preference === 'system' ? 'unspecified' : preference);
   }, [hydrated, preference]);
 
   const resolvedTheme = resolveThemePreference(preference, systemScheme);
